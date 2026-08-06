@@ -1,0 +1,8 @@
+{
+  "name": "Giáo Trình Sữa Hạt Thực Chiến",
+  "description": "Module khóa học kinh doanh sữa hạt take-away, bao gồm thiết kế menu, setup dụng cụ, tính cost và quy trình vận hành tích hợp công nghệ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+  
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background-color: white !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+  
+  /* specifically prevent cutting inside grid and flex items */
+  .grid > div, .flex > div {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* Force page breaks before each major section inside a module */
+.space-y-10 > div, 
+.space-y-12 > div, 
+.space-y-8 > div, 
+.space-y-16 > div, 
+.space-y-6 > div {
+  page-break-before: always;
+  break-before: page;
+}
+
+/* BUT prevent page break before the very first child if it's the only one, or just let html2pdf handle it. Actually, html2pdf will start a new page for each of these divs. */
