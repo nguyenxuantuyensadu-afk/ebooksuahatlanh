@@ -31,9 +31,8 @@ jobs:
         run: npm install
       - name: Build
         run: npm run build
-        AIzaSyAO078zOBhw-I-fUnVxI_oRBkeHnzGXxPs
         env:
-          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
+          VITE_GEMINI_API_KEY: "AIzaSyAO078zOBhw-I-fUnVxI_oRBkeHnzGXxPs"
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
