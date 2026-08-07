@@ -1,18 +1,203 @@
-import { Plus, Trash2, CheckCircle2, ChevronRight, Menu, X, Search, ChevronDown, ChevronUp, Printer, Download } from "lucide-react";
-import React, { useState } from "react";
+import Login from "./components/Login";
+import { Toaster, toast } from "react-hot-toast";
+import AdminDashboard from "./components/AdminDashboard";
+import NotesPanel from './components/NotesPanel';
+import Quiz from './components/Quiz';
+
+import { Plus, Trash2, CheckCircle2, ChevronRight, Menu, X, Search, ChevronDown, ChevronUp, Printer, Download, LogOut, Lock, Star, Eye, Maximize, Minimize , Edit2, Save } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { courseData } from "./data";
+import { collection, getDocs, onSnapshot, doc, updateDoc, increment, setDoc } from "firebase/firestore";
+import { db } from "./lib/firebase";
+import { courseData as defaultCourseData } from "./data";
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  const [course, setCourse] = useState(defaultCourseData);
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, "course_content", "main"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const merged = { ...defaultCourseData, ...data };
+        if (data.modules && Array.isArray(data.modules)) {
+           merged.modules = data.modules.map((m: any) => {
+             const defaultModule = defaultCourseData.modules.find(dm => dm.id === m.id);
+             return { ...m, icon: defaultModule?.icon || null };
+           });
+        }
+        setCourse(merged);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+
+  // Sync currentUser with DB in case admin changes permissions while user is logged in
+  useEffect(() => {
+    if (!currentUser || currentUser.role === 'admin') return;
+    const unsubscribe = onSnapshot(doc(db, "users", currentUser.id), (doc) => {
+      if (doc.exists()) {
+        setCurrentUser({ id: doc.id, ...doc.data() });
+      }
+    });
+    return () => unsubscribe();
+  }, [currentUser?.id, currentUser?.role]);
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [activeModuleId, setActiveModuleId] = useState(courseData.modules[0].id);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [activeModuleId, setActiveModuleId] = useState(course.modules[0].id);
   const [recipeSearch, setRecipeSearch] = useState("");
+  const [moduleSearch, setModuleSearch] = useState("");
   const [showOnlyEasy, setShowOnlyEasy] = useState(false);
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
+
+  const [moduleViews, setModuleViews] = useState<Record<string, number>>({});
+  const [viewedModules] = useState(() => new Set<string>());
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "module_stats"), (snapshot) => {
+      const views: Record<string, number> = {};
+      snapshot.forEach(doc => {
+        views[doc.id] = doc.data().views || 0;
+      });
+      setModuleViews(views);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (activeModuleId && !viewedModules.has(activeModuleId)) {
+      viewedModules.add(activeModuleId);
+      const docRef = doc(db, "module_stats", activeModuleId);
+      setDoc(docRef, { views: increment(1) }, { merge: true }).catch(console.error);
+    }
+  }, [activeModuleId, viewedModules]);
+
+
+  const toggleModuleCompletion = async () => {
+    if (!currentUser || currentUser.role === 'admin') return;
+    const completed = currentUser.completedModules || [];
+    const isCompleted = completed.includes(activeModuleId);
+    const newCompleted = isCompleted 
+      ? completed.filter((id: string) => id !== activeModuleId)
+      : [...completed, activeModuleId];
+    
+    try {
+      await updateDoc(doc(db, "users", currentUser.id), {
+        completedModules: newCompleted
+      });
+      if (!isCompleted) {
+        toast.success("Chúc mừng bạn đã hoàn thành phần này!", { icon: "🎉" });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Lỗi khi lưu trạng thái");
+    }
+  };
+
+  const completedModules = currentUser?.completedModules || [];
+  const progressPercentage = Math.round((completedModules.length / course.modules.length) * 100) || 0;
+
+  const toggleFavoriteModule = async (moduleId: string) => {
+    if (!currentUser || currentUser.role === 'admin') return;
+    const favorites = currentUser.favoriteModules || [];
+    const isFavorite = favorites.includes(moduleId);
+    const newFavorites = isFavorite
+      ? favorites.filter((id: string) => id !== moduleId)
+      : [...favorites, moduleId];
+    
+    try {
+      await updateDoc(doc(db, "users", currentUser.id), {
+        favoriteModules: newFavorites
+      });
+      if (!isFavorite) {
+        toast.success("Đã thêm vào mục yêu thích!", { id: "fav" });
+      } else {
+        toast.success("Đã gỡ khỏi mục yêu thích", { id: "fav" });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Lỗi khi cập nhật yêu thích");
+    }
+  };
+
+  const favoriteModules = currentUser?.favoriteModules || [];
+
+  const toggleFavoriteRecipe = async (recipeName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentUser || currentUser.role === 'admin') return;
+    const favorites = currentUser.favoriteRecipes || [];
+    const isFavorite = favorites.includes(recipeName);
+    const newFavorites = isFavorite
+      ? favorites.filter((name: string) => name !== recipeName)
+      : [...favorites, recipeName];
+    
+    try {
+      await updateDoc(doc(db, "users", currentUser.id), {
+        favoriteRecipes: newFavorites
+      });
+      if (!isFavorite) {
+        toast.success("Đã thêm công thức vào yêu thích!", { id: "fav-rec" });
+      } else {
+        toast.success("Đã gỡ công thức khỏi yêu thích", { id: "fav-rec" });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Lỗi khi cập nhật yêu thích");
+    }
+  };
+
+  const favoriteRecipes = currentUser?.favoriteRecipes || [];
+
+
+
   const [isDownloading, setIsDownloading] = useState(false);
+
+  const [editingItem, setEditingItem] = useState<{
+    type: 'course' | 'module' | 'recipeGroup' | 'recipe' | 'new_recipe';
+    path?: any;
+    data: any;
+  } | null>(null);
+
+  const handleSaveInlineEdit = async (newData: any) => {
+     let updatedCourse = JSON.parse(JSON.stringify(course));
+     
+     if (editingItem?.type === 'course') {
+        updatedCourse = { ...updatedCourse, ...newData };
+     } else if (editingItem?.type === 'module') {
+        const mIdx = updatedCourse.modules.findIndex((m: any) => m.id === editingItem.path.moduleId);
+        if (mIdx > -1) {
+           updatedCourse.modules[mIdx] = { ...updatedCourse.modules[mIdx], ...newData };
+        }
+     } else if (editingItem?.type === 'recipe') {
+        const { gIdx, rIdx } = editingItem.path;
+        const recipeModuleIdx = updatedCourse.modules.findIndex((m: any) => m.id === "recipes");
+        updatedCourse.modules[recipeModuleIdx].recipeGroups[gIdx].recipes[rIdx] = newData;
+     } else if (editingItem?.type === 'new_recipe') {
+        const { gIdx } = editingItem.path;
+        const recipeModuleIdx = updatedCourse.modules.findIndex((m: any) => m.id === "recipes");
+        if (!updatedCourse.modules[recipeModuleIdx].recipeGroups[gIdx].recipes) {
+           updatedCourse.modules[recipeModuleIdx].recipeGroups[gIdx].recipes = [];
+        }
+        updatedCourse.modules[recipeModuleIdx].recipeGroups[gIdx].recipes.push(newData);
+     }
+     
+     const cloneToSave = JSON.parse(JSON.stringify(updatedCourse, (key, value) => key === 'icon' ? undefined : value));
+     try {
+       await setDoc(doc(db, "course_content", "main"), cloneToSave);
+       toast.success("Cập nhật thành công!");
+     } catch (e) {
+       toast.error("Lỗi cập nhật!");
+     }
+     setEditingItem(null);
+  };
+
   const [sweetenerPrefs, setSweetenerPrefs] = useState<Record<string, 'sugar' | 'milk'>>({});
   const [recipeMultiplier, setRecipeMultiplier] = useState(1);
   
@@ -25,6 +210,18 @@ export default function App() {
     unit: string;
   }
   
+
+  // Ensure activeModuleId is unlocked, else switch to first unlocked
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'admin') {
+      const unlocked = currentUser.unlockedModules || [];
+      if (!unlocked.includes(activeModuleId)) {
+        if (unlocked.length > 0) {
+          setActiveModuleId(unlocked[0]);
+        }
+      }
+    }
+  }, [currentUser, activeModuleId]);
   const [costYield, setCostYield] = useState<number>(10);
   const [detailedCostRows, setDetailedCostRows] = useState<CostRow[]>([
     { id: '1', name: 'Bắp nếp tươi', usage: 600, buyQuantity: 1000, buyPrice: 15000, unit: 'g' },
@@ -39,16 +236,95 @@ export default function App() {
     setDetailedCostRows(rows => rows.map(r => r.id === id ? { ...r, [field]: value } : r));
   };
 
+  
+  const exportCostTableToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+    csvContent += "Tên Chi Phí,Định Lượng Dùng,Đơn Vị,Quy Cách Mua,Đơn Vị,Giá Mua (VNĐ),Thành Tiền (VNĐ)\n";
+
+    detailedCostRows.forEach(row => {
+      const rowCost = (row.usage / (row.buyQuantity || 1)) * row.buyPrice;
+      const rowArray = [
+        `"${row.name}"`,
+        row.usage,
+        `"${row.unit}"`,
+        row.buyQuantity,
+        `"${row.unit}"`,
+        row.buyPrice,
+        rowCost
+      ];
+      csvContent += rowArray.join(",") + "\n";
+    });
+
+    csvContent += `\nTổng Chi Phí Mẻ,,,,,,${totalDetailedCost}\n`;
+    csvContent += `Thành phẩm thu được,,,,,,${costYield} chai\n`;
+    const costPerBottle = (totalDetailedCost / (costYield || 1));
+    csvContent += `Giá Vốn / 1 Chai,,,,,,${costPerBottle.toFixed(0)}\n`;
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Bang_Tinh_Gia_Von.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Đã xuất file CSV thành công!");
+  };
+
   const removeCostRow = (id: string) => {
     setDetailedCostRows(rows => rows.filter(r => r.id !== id));
   };
   
   const totalDetailedCost = detailedCostRows.reduce((acc, r) => acc + (r.usage / (r.buyQuantity || 1)) * r.buyPrice, 0);
   
+  
+  const costDataLoaded = React.useRef(false);
+
+  useEffect(() => {
+    if (currentUser?.personalCostData && !costDataLoaded.current) {
+      setDetailedCostRows(currentUser.personalCostData.rows);
+      if (currentUser.personalCostData.yield) setCostYield(currentUser.personalCostData.yield);
+      costDataLoaded.current = true;
+    }
+  }, [currentUser]);
+
+  const savePersonalCostData = async () => {
+    if (!currentUser || currentUser.role === 'admin') {
+       toast.error("Vui lòng đăng nhập với tài khoản học viên để lưu.");
+       return;
+    }
+    try {
+      await updateDoc(doc(db, "users", currentUser.id), {
+        personalCostData: {
+          rows: detailedCostRows,
+          yield: costYield
+        }
+      });
+      toast.success("Đã lưu bảng tính chi phí cá nhân!");
+    } catch (e) {
+      toast.error("Lỗi khi lưu dữ liệu!");
+    }
+  };
+
+  
   const [dailySales, setDailySales] = useState<number>(50);
   const [sellingPrice, setSellingPrice] = useState<number>(15000);
   const [costPerBottle, setCostPerBottle] = useState<number>(3800);
   const [dailyOpsCost, setDailyOpsCost] = useState<number>(100000);
+
+  const profitChartData = useMemo(() => {
+    const data = [];
+    for (let i = 0; i <= 300; i += 20) {
+      const revenue = i * sellingPrice;
+      const cost = (i * costPerBottle) + dailyOpsCost;
+      data.push({
+        sales: i,
+        profit: revenue - cost,
+        revenue,
+        cost
+      });
+    }
+    return data;
+  }, [sellingPrice, costPerBottle, dailyOpsCost]);
 
   const exportActiveModuleToPDF = async () => {
     try {
@@ -59,7 +335,7 @@ export default function App() {
       
       await new Promise(resolve => setTimeout(resolve, 350));
       
-      const activeModule = courseData.modules.find(m => m.id === activeModuleId);
+      const activeModule = course.modules.find(m => m.id === activeModuleId);
       const title = activeModule ? activeModule.title.replace(/[^a-zA-Z0-9 -]/g, '') : 'bai-hoc';
       
       const pdf = new jsPDF({
@@ -110,7 +386,7 @@ export default function App() {
           let currentY = margin;
           
           for (const el of group) {
-              if (el.offsetHeight === 0) continue;
+              if ((el as HTMLElement).offsetHeight === 0) continue;
               
               const dataUrl = await toPng(el as HTMLElement, {
                   quality: 1,
@@ -214,16 +490,63 @@ export default function App() {
     return "Medium";
   };
 
-  const NutritionIcon = courseData.modules[0].icon;
-  const MenuIcon = courseData.modules[2].icon;
-  const EquipmentIcon = courseData.modules[1].icon;
-  const CostingIcon = courseData.modules[3].icon;
-  const OperationsIcon = courseData.modules[4].icon;
-  const MarketingIcon = courseData.modules[5].icon;
-  const RecipesIcon = courseData.modules[6].icon;
+  const NutritionIcon = course.modules[0].icon;
+  const MenuIcon = course.modules[2].icon;
+  const EquipmentIcon = course.modules[1].icon;
+  const CostingIcon = course.modules[3].icon;
+  const OperationsIcon = course.modules[4].icon;
+  const MarketingIcon = course.modules[5].icon;
+  const RecipesIcon = course.modules[6].icon;
+
+
+  useEffect(() => {
+    // Listen to custom recipes
+    const unsubscribe = onSnapshot(collection(db, "recipes"), (snapshot) => {
+      const customRecipes: any[] = [];
+      snapshot.forEach(doc => customRecipes.push({ id: doc.id, ...doc.data() }));
+      
+      // Find module index for recipes
+      const recipeModuleIdx = course.modules.findIndex(m => m.id === "recipes");
+      if (recipeModuleIdx !== -1 && course.modules[recipeModuleIdx].recipeGroups) {
+        let groups = course.modules[recipeModuleIdx].recipeGroups;
+        
+        // Remove old custom group if it exists
+        groups = groups.filter((g: any) => g.groupName !== "Công thức tùy chỉnh (Mới)");
+        
+        if (customRecipes.length > 0) {
+          groups.push({
+            groupName: "Công thức tùy chỉnh (Mới)",
+            groupDesc: "Các công thức do Quản trị viên thêm vào",
+            recipes: customRecipes
+          });
+        }
+        
+        course.modules[recipeModuleIdx].recipeGroups = groups;
+        
+        // Force a small state update if we are on the recipes tab
+        if (activeModuleId === 'recipes') {
+           setRecipeSearch(prev => prev + " ");
+           setTimeout(() => setRecipeSearch(prev => prev.trim()), 0);
+        }
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [activeModuleId]);
+
+  if (!currentUser) {
+    return (
+      <>
+        <Toaster position="bottom-center" />
+        <Login onLogin={(user) => setCurrentUser(user)} />
+      </>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#f8f7f5] print:bg-white font-sans text-stone-900 selection:bg-amber-200">
+    <>
+      <Toaster position="bottom-center" />
+      <div className="min-h-screen bg-[#f8f7f5] print:bg-white font-sans text-stone-900 selection:bg-amber-200">
       {/* Mobile Header */}
       <header className="print:hidden lg:hidden sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-stone-200 px-5 py-4 flex justify-between items-center shadow-sm">
         <h1 className="font-bold text-lg text-stone-900 truncate tracking-tight">Giáo Trình Sữa Hạt</h1>
@@ -236,8 +559,8 @@ export default function App() {
         {/* Sidebar Navigation */}
         <aside
           className={`print:hidden ${
-            isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-          } lg:translate-x-0 fixed lg:sticky top-0 lg:top-0 h-screen w-72 bg-[#f8f7f5] border-r border-stone-200 p-6 overflow-y-auto transition-transform duration-300 z-40`}
+            isMobileMenuOpen ? "translate-x-0" : (isFocusMode ? "-translate-x-full" : "-translate-x-full")
+          } ${isFocusMode ? "lg:-translate-x-full lg:hidden" : "lg:translate-x-0"} fixed lg:sticky top-0 lg:top-0 h-screen w-72 bg-[#f8f7f5] border-r border-stone-200 p-6 overflow-y-auto transition-transform duration-300 z-40`}
         >
           <div className="hidden lg:block mb-10">
             <h1 className="font-black text-[1.75rem] tracking-tight text-stone-900 leading-[1.1]">
@@ -248,26 +571,130 @@ export default function App() {
           </div>
 
           <nav className="space-y-1.5">
+            
+            <div className="mb-6 block pr-4 lg:pr-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[11px] font-bold text-stone-400 uppercase tracking-widest">Tiến độ học tập</span>
+                <span className="text-xs font-bold text-amber-600">{progressPercentage}%</span>
+              </div>
+              <div className="h-2 w-full bg-stone-200 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-amber-500 transition-all duration-500 ease-out" 
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+            </div>
+            
+            <div className="mb-6 relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search size={16} className="text-stone-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Tìm kiếm bài học..."
+                value={moduleSearch}
+                onChange={(e) => setModuleSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-stone-200 rounded-xl text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-stone-700 placeholder:text-stone-400 transition-colors"
+              />
+              {moduleSearch && (
+                <button 
+                  onClick={() => setModuleSearch("")}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            
+            {favoriteModules.length > 0 && !moduleSearch && (
+              <div className="mb-8">
+                <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <Star size={12} className="fill-amber-600" /> Bài học yêu thích
+                </p>
+                <div className="space-y-1.5">
+                  {course.modules.filter(m => favoriteModules.includes(m.id)).map(module => {
+                    const Icon = module.icon;
+                    const isActive = activeModuleId === module.id;
+                    const isLocked = currentUser?.role !== 'admin' && !(currentUser?.unlockedModules || []).includes(module.id);
+                    return (
+                      <button
+                        key={`fav-${module.id}`}
+                        onClick={() => {
+                          if (isLocked) return;
+                          setActiveModuleId(module.id);
+                          setIsMobileMenuOpen(false);
+                        }}
+                        disabled={isLocked}
+                        className={`w-full flex items-center gap-3.5 px-4 py-2.5 text-left text-sm font-semibold rounded-xl transition-all duration-200 group ${
+                          isLocked 
+                            ? "opacity-50 cursor-not-allowed text-stone-400"
+                            : isActive
+                              ? "bg-amber-50 text-amber-700 shadow-sm border border-amber-100"
+                              : "text-stone-600 hover:bg-white hover:text-stone-900 border border-transparent"
+                        }`}
+                      >
+                        {isLocked ? (
+                          <Lock size={16} className="text-stone-400" />
+                        ) : (
+                          <Icon size={16} className={`transition-colors ${isActive ? "text-amber-600" : "text-stone-400 group-hover:text-stone-600"}`} />
+                        )}
+                        <div className="flex-1 overflow-hidden">
+                    <span className="block truncate">{module.title}</span>
+                    <span className="flex items-center gap-1 text-[10px] opacity-70 mt-0.5">
+                      <Eye size={10} /> {moduleViews[module.id] || 0} lượt xem
+                    </span>
+                  </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <p className="text-[11px] font-bold text-stone-400 uppercase tracking-widest mb-4 mt-8 lg:mt-0">Mục lục khóa học</p>
-            {courseData.modules.map((module) => {
+
+            
+            {course.modules.filter((module) => 
+              module.title.toLowerCase().includes(moduleSearch.toLowerCase())
+            ).map((module) => {
+
               const Icon = module.icon;
               const isActive = activeModuleId === module.id;
+              const isLocked = currentUser?.role !== 'admin' && !(currentUser?.unlockedModules || []).includes(module.id);
+              
               return (
                 <button
                   key={module.id}
                   onClick={() => {
+                    if (isLocked) return;
                     setActiveModuleId(module.id);
                     setIsMobileMenuOpen(false);
                   }}
+                  disabled={isLocked}
                   className={`w-full flex items-center gap-3.5 px-4 py-3 text-left text-sm font-semibold rounded-xl transition-all duration-200 group ${
-                    isActive
-                      ? "bg-white text-amber-700 shadow-sm border border-stone-200/60"
-                      : "text-stone-600 hover:bg-white hover:text-stone-900 border border-transparent"
+                    isLocked 
+                      ? "opacity-50 cursor-not-allowed text-stone-400"
+                      : isActive
+                        ? "bg-white text-amber-700 shadow-sm border border-stone-200/60"
+                        : "text-stone-600 hover:bg-white hover:text-stone-900 border border-transparent"
                   }`}
                 >
-                  <Icon size={18} className={`transition-colors ${isActive ? "text-amber-600" : "text-stone-400 group-hover:text-stone-600"}`} />
-                  <span className="flex-1 truncate">{module.title}</span>
-                  <ChevronRight size={14} className={`transition-all ${isActive ? "opacity-100 text-amber-600 translate-x-0" : "opacity-0 -translate-x-2 group-hover:opacity-100 text-stone-300 group-hover:translate-x-0"}`} />
+                  {isLocked ? (
+                    <Lock size={18} className="text-stone-400" />
+                  ) : (
+                    <Icon size={18} className={`transition-colors ${isActive ? "text-amber-600" : "text-stone-400 group-hover:text-stone-600"}`} />
+                  )}
+                  <div className="flex-1 overflow-hidden">
+                    <span className="block truncate">{module.title}</span>
+                    <span className="flex items-center gap-1 text-[10px] opacity-70 mt-0.5">
+                      <Eye size={10} /> {moduleViews[module.id] || 0} lượt xem
+                    </span>
+                  </div>
+                  {completedModules.includes(module.id) && !isLocked && <CheckCircle2 size={16} className="text-emerald-500 ml-2" />}
+                  {!isLocked && (
+                    <ChevronRight size={14} className={`transition-all ${isActive ? "opacity-100 text-amber-600 translate-x-0" : "opacity-0 -translate-x-2 group-hover:opacity-100 text-stone-300 group-hover:translate-x-0"}`} />
+                  )}
                 </button>
               );
             })}
@@ -277,28 +704,74 @@ export default function App() {
             <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center mb-3">
                <CheckCircle2 size={20} className="text-amber-600" />
             </div>
-            <p className="text-xs text-stone-500 font-medium leading-relaxed">
+            <p className="text-xs text-stone-500 font-medium leading-relaxed mb-4">
               Tài liệu độc quyền thiết kế cho mô hình quầy và xe đẩy nhỏ lẻ.
             </p>
+            {currentUser?.role === 'admin' && (
+              <button 
+                onClick={() => setShowAdmin(!showAdmin)}
+                className="w-full px-4 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors mb-3"
+              >
+                {showAdmin ? 'Trở về Khóa học' : 'Quản trị viên'}
+              </button>
+            )}
+            <button 
+              onClick={() => {
+                setCurrentUser(null);
+                setShowAdmin(false);
+                toast.success("Đăng xuất thành công!");
+              }}
+              className="w-full px-4 py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors"
+            >
+              <LogOut size={18} /> Đăng xuất
+            </button>
           </div>
         </aside>
 
         {/* Main Content */}
         <main className="flex-1 px-5 py-8 lg:px-16 lg:py-16 max-w-5xl w-full mx-auto bg-white min-h-screen border-l border-stone-100 shadow-[0_0_40px_rgba(0,0,0,0.02)] print:border-none print:shadow-none print:m-0 print:p-0 print:max-w-none print:w-full">
+        {showAdmin ? (
+          <AdminDashboard onClose={() => setShowAdmin(false)} courseData={course} />
+        ) : (
+          <>
           {/* Hero Section */}
           <div className="mb-14 pb-10 border-b border-stone-100 print:hidden">
-            <div className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-stone-100 text-stone-800 text-[11px] font-bold uppercase tracking-widest mb-6">
-              Module Cốt Lõi
+            <div className="flex justify-between items-start mb-6">
+              <div className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-stone-100 text-stone-800 text-[11px] font-bold uppercase tracking-widest">
+                Module Cốt Lõi
+              </div>
+              <button
+                onClick={() => setIsFocusMode(!isFocusMode)}
+                className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-200 hover:bg-stone-50 hover:border-stone-300 text-stone-600 rounded-xl text-xs font-bold transition-colors shadow-sm"
+                title={isFocusMode ? "Tắt chế độ tập trung" : "Bật chế độ tập trung"}
+              >
+                {isFocusMode ? (
+                  <><Minimize size={14} /> Tắt Focus</>
+                ) : (
+                  <><Maximize size={14} /> Bật Focus</>
+                )}
+              </button>
             </div>
             <h2 className="text-4xl lg:text-[3.5rem] font-black text-stone-900 tracking-tight leading-[1.05] mb-6">
-              {courseData.title}
+              {course.title}
             </h2>
-            <p className="text-2xl font-bold text-amber-700 mb-5 tracking-tight">{courseData.subtitle}</p>
+            <p className="text-2xl font-bold text-amber-700 mb-5 tracking-tight">{course.subtitle}</p>
             <p className="text-lg text-stone-600 leading-relaxed max-w-3xl">
-              {courseData.description}
+              {course.description}
             </p>
           </div>
 
+          {currentUser?.role !== 'admin' && !(currentUser?.unlockedModules || []).includes(activeModuleId) ? (
+            <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+              <div className="w-20 h-20 bg-stone-100 text-stone-400 rounded-full flex items-center justify-center mb-6">
+                <Lock size={40} />
+              </div>
+              <h3 className="text-2xl font-black text-stone-900 mb-2">Module Này Bị Khóa</h3>
+              <p className="text-stone-500 font-medium max-w-md mx-auto">
+                Bạn chưa được cấp quyền truy cập vào phần nội dung này. Vui lòng liên hệ quản trị viên để được hỗ trợ mở khóa.
+              </p>
+            </div>
+          ) : (
           <AnimatePresence mode="wait">
             <motion.div
               key={activeModuleId}
@@ -316,11 +789,22 @@ export default function App() {
                       <div className="p-3.5 bg-green-100 text-green-700 rounded-2xl shadow-sm">
                         <NutritionIcon size={24} />
                       </div>
-                      <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[0].title}</h3>
+                      <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[0].title}</h3>
                     </div>
-                    <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
                   </div>
-                  <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{courseData.modules[0].description}</p>
+                  <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[0].description}</p>
                   
                   <div className="space-y-10">
                     <div>
@@ -329,7 +813,7 @@ export default function App() {
                         Tháp Cân Bằng Dinh Dưỡng
                       </h4>
                       <div className="bg-stone-50 border border-stone-200 rounded-[1.5rem] p-6 md:p-8 flex flex-col items-center gap-3">
-                        {courseData.modules[0].nutritionalPyramid?.map((item: any, idx: number) => (
+                        {course.modules[0].nutritionalPyramid?.map((item: any, idx: number) => (
                           <div 
                             key={idx} 
                             className={`flex flex-col sm:flex-row items-center justify-between p-4 rounded-xl border-2 ${item.color} ${item.width} min-w-[280px] shadow-sm transition-transform hover:scale-[1.02]`}
@@ -354,7 +838,7 @@ export default function App() {
                         Phân Loại Hạt Cơ Bản
                       </h4>
                       <div className="grid md:grid-cols-3 gap-6">
-                        {courseData.modules[0].nutritionData?.map((item: any, idx: number) => (
+                        {course.modules[0].nutritionData?.map((item: any, idx: number) => (
                           <div key={idx} className="bg-stone-50 border border-stone-200 rounded-[1.5rem] p-6 hover:shadow-md transition-shadow">
                             <h5 className="font-bold text-stone-800 text-lg mb-3 leading-tight">{item.group}</h5>
                             <p className="text-sm font-medium text-stone-600 mb-4 bg-white p-3 rounded-xl border border-stone-100">{item.examples}</p>
@@ -379,7 +863,7 @@ export default function App() {
                         Nguyên Tắc Ngâm Hạt Quan Trọng
                       </h4>
                       <div className="grid md:grid-cols-2 gap-4">
-                        {courseData.modules[0].soakingRules?.map((rule: string, idx: number) => (
+                        {course.modules[0].soakingRules?.map((rule: string, idx: number) => (
                           <div key={idx} className="bg-white p-5 rounded-2xl border border-amber-100/50 flex gap-4 items-start shadow-sm">
                             <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 font-bold text-sm">
                               {idx + 1}
@@ -396,7 +880,7 @@ export default function App() {
                         Thời Gian Ngâm Cho Từng Loại Hạt
                       </h4>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
-                        {courseData.modules[0].specificSoakTimes?.map((item: any, idx: number) => (
+                        {course.modules[0].specificSoakTimes?.map((item: any, idx: number) => (
                           <div key={idx} className="flex flex-col items-center group">
                             <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full border-[6px] border-teal-100 bg-white shadow-sm flex flex-col items-center justify-center transition-all group-hover:border-teal-300 group-hover:-translate-y-1 relative">
                               <span className="font-black text-teal-700 text-xl sm:text-2xl">{item.time}</span>
@@ -414,7 +898,7 @@ export default function App() {
                         Quy Trình Nấu Sữa 7 Bước
                       </h4>
                       <div className="flex flex-col gap-4 relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-indigo-200 before:to-transparent">
-                        {courseData.modules[0].brewingSteps?.map((step: any, idx: number) => (
+                        {course.modules[0].brewingSteps?.map((step: any, idx: number) => (
                           <div key={idx} className={`relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active`}>
                             
                             <div className="flex items-center justify-center w-12 h-12 rounded-full border-4 border-white bg-indigo-100 text-indigo-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 font-black z-10">
@@ -437,19 +921,19 @@ export default function App() {
                           <span className="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
                           Công Thức Phối Sữa Hạt Tiêu Chuẩn
                         </h4>
-                        <p className="text-violet-800 font-medium opacity-90">{courseData.modules[0].mixingFormulas?.description}</p>
+                        <p className="text-violet-800 font-medium opacity-90">{course.modules[0].mixingFormulas?.description}</p>
                       </div>
 
                       <div className="grid md:grid-cols-2 gap-8 mb-8">
                         <div className="bg-white rounded-[1.5rem] p-6 shadow-sm border border-violet-100/50">
                           <div className="inline-block px-3 py-1 bg-violet-100 text-violet-700 rounded-lg text-sm font-bold mb-4">
-                            {courseData.modules[0].mixingFormulas?.twoTypes.title}
+                            {course.modules[0].mixingFormulas?.twoTypes.title}
                           </div>
                           <div className="text-xl font-black text-stone-800 mb-6 bg-stone-50 p-4 rounded-xl border border-stone-100 text-center">
-                            {courseData.modules[0].mixingFormulas?.twoTypes.ratio}
+                            {course.modules[0].mixingFormulas?.twoTypes.ratio}
                           </div>
                           <ul className="space-y-3">
-                            {courseData.modules[0].mixingFormulas?.twoTypes.examples.map((ex: string, idx: number) => (
+                            {course.modules[0].mixingFormulas?.twoTypes.examples.map((ex: string, idx: number) => (
                               <li key={idx} className="flex items-start gap-3">
                                 <span className="text-violet-400 mt-1">✓</span>
                                 <span className="text-sm font-medium text-stone-700">{ex}</span>
@@ -460,13 +944,13 @@ export default function App() {
 
                         <div className="bg-white rounded-[1.5rem] p-6 shadow-sm border border-fuchsia-100/50">
                           <div className="inline-block px-3 py-1 bg-fuchsia-100 text-fuchsia-700 rounded-lg text-sm font-bold mb-4">
-                            {courseData.modules[0].mixingFormulas?.threeTypes.title}
+                            {course.modules[0].mixingFormulas?.threeTypes.title}
                           </div>
                           <div className="text-xl font-black text-stone-800 mb-6 bg-stone-50 p-4 rounded-xl border border-stone-100 text-center">
-                            {courseData.modules[0].mixingFormulas?.threeTypes.ratio}
+                            {course.modules[0].mixingFormulas?.threeTypes.ratio}
                           </div>
                           <ul className="space-y-3">
-                            {courseData.modules[0].mixingFormulas?.threeTypes.examples.map((ex: string, idx: number) => (
+                            {course.modules[0].mixingFormulas?.threeTypes.examples.map((ex: string, idx: number) => (
                               <li key={idx} className="flex items-start gap-3">
                                 <span className="text-fuchsia-400 mt-1">✓</span>
                                 <span className="text-sm font-medium text-stone-700">{ex}</span>
@@ -479,7 +963,7 @@ export default function App() {
                       <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-violet-100">
                         <h5 className="font-bold text-violet-900 mb-4 text-sm uppercase tracking-wider">Nguyên Tắc Vàng</h5>
                         <div className="grid gap-3">
-                          {courseData.modules[0].mixingFormulas?.goldenRules.map((rule: string, idx: number) => (
+                          {course.modules[0].mixingFormulas?.goldenRules.map((rule: string, idx: number) => (
                             <div key={idx} className="flex gap-3 items-center">
                               <div className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0"></div>
                               <p className="text-sm font-medium text-stone-700">{rule}</p>
@@ -500,11 +984,22 @@ export default function App() {
                 <div className="p-3.5 bg-amber-100 text-amber-700 rounded-2xl shadow-sm">
                   <MenuIcon size={24} />
                 </div>
-                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[2].title}</h3>
+                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[2].title}</h3>
               </div>
-                <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
             </div>
-              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{courseData.modules[2].description}</p>
+              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[2].description}</p>
 
               <div className="bg-white rounded-[2rem] shadow-sm border border-stone-200 overflow-hidden">
                 <div className="overflow-x-auto">
@@ -518,7 +1013,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100">
-                      {courseData.modules[2].menuItems?.map((item, idx) => (
+                      {course.modules[2].menuItems?.map((item, idx) => (
                         <tr key={idx} className="hover:bg-stone-50 transition-colors group">
                           <td className="py-5 px-6 font-bold text-stone-800 whitespace-nowrap">{item.name}</td>
                           <td className="py-5 px-6">
@@ -535,12 +1030,12 @@ export default function App() {
                 </div>
               </div>
 
-              {courseData.modules[2].menuStrategy && (
+              {course.modules[2].menuStrategy && (
                 <div className="mt-10">
-                  <h4 className="text-xl font-bold text-stone-900 mb-2">{courseData.modules[2].menuStrategy.title}</h4>
-                  <p className="text-stone-600 mb-6">{courseData.modules[2].menuStrategy.description}</p>
+                  <h4 className="text-xl font-bold text-stone-900 mb-2">{course.modules[2].menuStrategy.title}</h4>
+                  <p className="text-stone-600 mb-6">{course.modules[2].menuStrategy.description}</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {courseData.modules[2].menuStrategy.strategies.map((strategy: any, idx: number) => (
+                    {course.modules[2].menuStrategy.strategies.map((strategy: any, idx: number) => (
                       <div key={idx} className="bg-white rounded-2xl p-6 border border-stone-200 shadow-sm relative overflow-hidden flex flex-col h-full">
                         <div className="absolute top-0 left-0 w-full h-1 bg-amber-500"></div>
                         <div className="flex justify-between items-start mb-4">
@@ -575,14 +1070,25 @@ export default function App() {
                 <div className="p-3.5 bg-sky-100 text-sky-700 rounded-2xl shadow-sm">
                   <EquipmentIcon size={24} />
                 </div>
-                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[1].title}</h3>
+                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[1].title}</h3>
               </div>
-                <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
             </div>
-              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{courseData.modules[1].description}</p>
+              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[1].description}</p>
 
               <div className="grid md:grid-cols-2 gap-6">
-                {courseData.modules[1].equipmentCategories?.map((category, idx) => (
+                {course.modules[1].equipmentCategories?.map((category, idx) => (
                   <div key={idx} className="bg-white p-8 rounded-[2rem] shadow-sm border border-stone-200 hover:shadow-md transition-shadow">
                     <h4 className="font-bold text-xl text-stone-900 mb-6 pb-4 border-b border-stone-100">
                       {category.name}
@@ -614,9 +1120,20 @@ export default function App() {
                 <div className="p-3.5 bg-emerald-100 text-emerald-700 rounded-2xl shadow-sm">
                   <CostingIcon size={24} />
                 </div>
-                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[3].title}</h3>
+                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[3].title}</h3>
               </div>
-                <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
             </div>
               
               <div className="bg-stone-50 p-8 rounded-[2rem] border border-stone-200 mb-10">
@@ -625,7 +1142,7 @@ export default function App() {
                    Nguyên Tắc Tính Giá Vốn:
                 </h4>
                 <ul className="space-y-4">
-                  {courseData.modules[3].costExplanation?.map((exp, idx) => (
+                  {course.modules[3].costExplanation?.map((exp, idx) => (
                     <li key={idx} className="flex gap-4 text-stone-700 font-medium text-[1.05rem] items-start">
                       <span className="w-6 h-6 rounded-full bg-white border border-stone-200 flex items-center justify-center shrink-0 text-xs font-bold text-stone-400 mt-0.5">{idx + 1}</span>
                       <span className="leading-relaxed">{exp}</span>
@@ -637,7 +1154,7 @@ export default function App() {
               <div className="bg-white rounded-[2rem] shadow-sm border border-stone-200 overflow-hidden">
                 <div className="bg-stone-900 px-8 py-5">
                   <h4 className="font-bold text-white text-lg tracking-wide">
-                    Bảng tính mẫu: {courseData.modules[3].costTableData?.recipe}
+                    Bảng tính mẫu: {course.modules[3].costTableData?.recipe}
                   </h4>
                 </div>
                 <div className="overflow-x-auto">
@@ -651,7 +1168,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100">
-                      {courseData.modules[3].costTableData?.rows.map((row, idx) => (
+                      {course.modules[3].costTableData?.rows.map((row, idx) => (
                         <tr key={idx} className="hover:bg-stone-50 transition-colors">
                           <td className="py-4 px-8 font-bold text-stone-800">{row.item}</td>
                           <td className="py-4 px-8 text-right font-medium text-stone-600">{row.quantity}</td>
@@ -664,31 +1181,31 @@ export default function App() {
                       <tr>
                         <td colSpan={3} className="py-5 px-8 font-bold text-right text-stone-600 uppercase text-xs tracking-wider">Tổng Chi Phí Mẻ:</td>
                         <td className="py-5 px-8 font-black text-right text-stone-900 text-xl">
-                          {courseData.modules[3].costTableData?.summary.totalCost}
+                          {course.modules[3].costTableData?.summary.totalCost}
                         </td>
                       </tr>
                       <tr>
                         <td colSpan={3} className="py-3 px-8 font-bold text-right text-stone-500 uppercase text-xs tracking-wider">Thành phẩm thu được:</td>
                         <td className="py-3 px-8 font-bold text-right text-stone-800">
-                          {courseData.modules[3].costTableData?.summary.yield}
+                          {course.modules[3].costTableData?.summary.yield}
                         </td>
                       </tr>
                       <tr>
                         <td colSpan={3} className="py-3 px-8 font-bold text-right text-stone-600 uppercase text-xs tracking-wider">Giá Vốn (Cost) / 1 Chai:</td>
                         <td className="py-3 px-8 font-black text-right text-rose-600 text-xl">
-                          {courseData.modules[3].costTableData?.summary.costPerBottle}
+                          {course.modules[3].costTableData?.summary.costPerBottle}
                         </td>
                       </tr>
                       <tr className="bg-emerald-50/50">
                         <td colSpan={3} className="py-6 px-8 font-bold text-right text-emerald-800 border-t border-emerald-100 uppercase text-xs tracking-wider">Giá Bán Đề Xuất:</td>
                         <td className="py-6 px-8 font-black text-right text-emerald-700 text-2xl border-t border-emerald-100">
-                          {courseData.modules[3].costTableData?.summary.sellingPrice}
+                          {course.modules[3].costTableData?.summary.sellingPrice}
                         </td>
                       </tr>
                       <tr>
                         <td colSpan={3} className="py-4 px-8 font-bold text-right text-stone-500 uppercase text-xs tracking-wider">Biên lợi nhuận gộp:</td>
                         <td className="py-4 px-8 font-bold text-right text-stone-800">
-                          {courseData.modules[3].costTableData?.summary.profitMargin}
+                          {course.modules[3].costTableData?.summary.profitMargin}
                         </td>
                       </tr>
                     </tfoot>
@@ -700,12 +1217,28 @@ export default function App() {
                   <h4 className="font-bold text-white text-lg tracking-wide">
                     Bảng Tính Giá Vốn Chi Tiết (Tương Tác)
                   </h4>
-                  <button 
-                    onClick={() => setDetailedCostRows([...detailedCostRows, { id: Date.now().toString(), name: 'Nguyên liệu mới', usage: 100, buyQuantity: 1000, buyPrice: 0, unit: 'g' }])} 
-                    className="print:hidden px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2"
-                  >
-                    <Plus size={16} /> Thêm dòng
-                  </button>
+                  <div className="flex flex-wrap items-center justify-end gap-3 print:hidden">
+                    <button 
+                      onClick={exportCostTableToCSV} 
+                      className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      <Download size={16} /> Xuất CSV
+                    </button>
+                    {currentUser?.role !== 'admin' && (
+                      <button 
+                        onClick={savePersonalCostData} 
+                        className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2 shadow-sm"
+                      >
+                        <Save size={16} /> Lưu kết quả
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setDetailedCostRows([...detailedCostRows, { id: Date.now().toString(), name: 'Nguyên liệu mới', usage: 100, buyQuantity: 1000, buyPrice: 0, unit: 'g' }])} 
+                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      <Plus size={16} /> Thêm dòng
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[800px]">
@@ -950,11 +1483,22 @@ export default function App() {
                 <div className="p-3.5 bg-indigo-100 text-indigo-700 rounded-2xl shadow-sm">
                   <OperationsIcon size={24} />
                 </div>
-                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[4].title}</h3>
+                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[4].title}</h3>
               </div>
-                <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
             </div>
-              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{courseData.modules[4].description}</p>
+              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[4].description}</p>
 
               <div className="space-y-10">
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-stone-200">
@@ -963,7 +1507,7 @@ export default function App() {
                     Quy Trình Chuẩn Bị (SOP) Đầu Ngày
                   </h4>
                   <div className="relative border-l-2 border-stone-100 ml-5 space-y-10 pb-4">
-                    {courseData.modules[4].sopSteps?.map((step, idx) => (
+                    {course.modules[4].sopSteps?.map((step, idx) => (
                       <div key={idx} className="relative pl-10">
                         <span className="absolute -left-[11px] top-1.5 w-5 h-5 rounded-full bg-white border-4 border-indigo-500 shadow-sm"></span>
                         <div className="inline-block px-3 py-1 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-lg mb-2">{step.time}</div>
@@ -974,7 +1518,7 @@ export default function App() {
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-6">
-                  {courseData.modules[4].techTips?.map((tip, idx) => (
+                  {course.modules[4].techTips?.map((tip, idx) => (
                     <div key={idx} className="bg-stone-900 p-8 rounded-[2rem] shadow-sm text-white">
                       <h5 className="font-bold text-xl mb-4 leading-tight">{tip.title}</h5>
                       <p className="text-stone-400 font-medium leading-relaxed">{tip.desc}</p>
@@ -993,16 +1537,27 @@ export default function App() {
                 <div className="p-3.5 bg-rose-100 text-rose-700 rounded-2xl shadow-sm">
                   <MarketingIcon size={24} />
                 </div>
-                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[5].title}</h3>
+                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[5].title}</h3>
               </div>
-                <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
             </div>
-              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{courseData.modules[5].description}</p>
+              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[5].description}</p>
 
               <div className="space-y-10">
                 {/* Concepts */}
                 <div className="grid md:grid-cols-3 gap-6">
-                  {courseData.modules[5].concepts?.map((concept, idx) => (
+                  {course.modules[5].concepts?.map((concept, idx) => (
                     <div key={idx} className="bg-white p-8 rounded-[2rem] shadow-sm border border-stone-200 hover:border-rose-200 transition-colors">
                       <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mb-5 text-rose-600 font-black text-xl">
                         {idx + 1}
@@ -1017,7 +1572,7 @@ export default function App() {
                 <div className="bg-stone-900 p-10 rounded-[2rem] shadow-sm text-white">
                   <h4 className="font-bold text-2xl mb-8">Phễu Nội Dung (Content Funnel)</h4>
                   <div className="grid md:grid-cols-3 gap-6">
-                    {courseData.modules[5].contentFunnel?.map((item, idx) => (
+                    {course.modules[5].contentFunnel?.map((item, idx) => (
                       <div key={idx} className="bg-[#242424] rounded-2xl p-6 border border-stone-800">
                         <div className="text-rose-400 font-black text-3xl mb-3 tracking-tight">{item.percentage}</div>
                         <h5 className="font-bold text-lg mb-3 text-stone-100">{item.type}</h5>
@@ -1033,7 +1588,7 @@ export default function App() {
                     Kỹ Thuật Quay Dựng Cơ Bản Bằng Điện Thoại
                   </h4>
                   <div className="grid sm:grid-cols-2 gap-8">
-                    {courseData.modules[5].shootingGuidelines?.map((guide, idx) => (
+                    {course.modules[5].shootingGuidelines?.map((guide, idx) => (
                       <div key={idx} className="flex gap-4">
                         <div className="mt-1 bg-rose-50 rounded-full p-1.5 shrink-0">
                            <CheckCircle2 className="text-rose-600" size={18} />
@@ -1050,10 +1605,10 @@ export default function App() {
                 {/* Perfect Video Blueprint */}
                 <div className="bg-[#fff5f5] p-8 lg:p-10 rounded-[2rem] border border-rose-100 shadow-sm">
                   <h4 className="font-bold text-2xl text-rose-900 mb-8 tracking-tight">
-                    {courseData.modules[5].perfectVideoBlueprint?.title}
+                    {course.modules[5].perfectVideoBlueprint?.title}
                   </h4>
                   <div className="space-y-4">
-                    {courseData.modules[5].perfectVideoBlueprint?.steps.map((step, idx) => (
+                    {course.modules[5].perfectVideoBlueprint?.steps.map((step, idx) => (
                       <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-rose-100/50 flex flex-col md:flex-row gap-5 items-center">
                         <div className="md:w-1/3 shrink-0 w-full">
                           <span className="inline-block px-3.5 py-1.5 bg-rose-100 text-rose-900 font-black uppercase tracking-widest text-[10px] rounded-lg mb-3">
@@ -1073,7 +1628,7 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-stone-200">
                   <h4 className="font-bold text-2xl text-stone-900 mb-8">Tối Ưu Phân Phối Địa Phương (Local SEO)</h4>
                   <ul className="space-y-6">
-                    {courseData.modules[5].localSEO?.map((seo, idx) => (
+                    {course.modules[5].localSEO?.map((seo, idx) => (
                       <li key={idx} className="flex gap-5 items-start">
                         <div className="w-10 h-10 rounded-xl bg-stone-100 flex items-center justify-center font-black text-stone-700 shrink-0">
                           {idx + 1}
@@ -1098,11 +1653,22 @@ export default function App() {
                   <div className="p-3.5 bg-teal-100 text-teal-700 rounded-2xl shadow-sm">
                     <RecipesIcon size={24} />
                   </div>
-                  <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[6].title}</h3>
+                  <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[6].title}</h3>
                 </div>
-                <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
               </div>
-              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl print:hidden">{courseData.modules[6].description}</p>
+              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl print:hidden">{course.modules[6].description}</p>
 
               <div className="mb-8 relative flex flex-col md:flex-row gap-4 print:hidden">
                 <div className="relative flex-1">
@@ -1135,7 +1701,7 @@ export default function App() {
               {/* Group Tabs */}
               {!recipeSearch && !showOnlyEasy && (
                 <div className="flex flex-wrap gap-2 mb-8 print:hidden">
-                  {courseData.modules[6].recipeGroups?.map((group, idx) => (
+                  {course.modules[6].recipeGroups?.map((group, idx) => (
                     <button
                       key={idx}
                       onClick={() => setActiveGroupIdx(idx)}
@@ -1152,17 +1718,20 @@ export default function App() {
               )}
 
               {/* Active Group Description */}
-              {!recipeSearch && !showOnlyEasy && courseData.modules[6].recipeGroups && (
-                <div className="mb-6 p-4 bg-teal-50 rounded-xl border border-teal-100 print:hidden">
-                  <p className="text-teal-800 text-sm font-medium">
-                    {courseData.modules[6].recipeGroups[activeGroupIdx].groupDesc}
+              {!recipeSearch && !showOnlyEasy && course.modules[6].recipeGroups && (
+                <div className="mb-6 p-4 bg-teal-50 rounded-xl border border-teal-100 print:hidden flex items-center justify-between gap-4">
+                                    <p className="text-teal-800 text-sm font-medium flex-1">
+                    {course.modules[6].recipeGroups[activeGroupIdx].groupDesc}
                   </p>
+                  {currentUser?.role === 'admin' && (
+                     <button onClick={() => setEditingItem({ type: 'new_recipe', path: { gIdx: activeGroupIdx }, data: { name: '', recipe: '', usage: '', prepTip: '' }})} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold rounded-lg shadow-sm flex items-center gap-1 shrink-0 transition-colors"><Plus size={14}/> Thêm món</button>
+                  )}
                 </div>
               )}
 
               {/* Recipes Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-10 print:flex print:flex-col print:gap-0 print:mb-0">
-                {courseData.modules[6].recipeGroups?.flatMap((group, idx) => {
+                {course.modules[6].recipeGroups?.flatMap((group, idx) => {
                   const searchLower = recipeSearch.toLowerCase();
                   const matchGroup = group.groupName.toLowerCase().includes(searchLower) || group.groupDesc.toLowerCase().includes(searchLower);
                   
@@ -1204,16 +1773,54 @@ export default function App() {
                           className="flex justify-between items-start mb-4 gap-3 cursor-pointer print:mb-6"
                           onClick={() => { setExpandedRecipeId(isExpanded ? null : recipeId); setRecipeMultiplier(1); }}
                         >
-                          <h4 className="font-bold text-stone-900 text-lg leading-tight print:text-2xl">
+                          <h4 className="font-bold text-stone-900 text-lg leading-tight print:text-2xl flex-1 pr-2">
                             {rIdx + 1}. {recipe.name}
                           </h4>
-                          <span className={`px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border shrink-0 print:border-stone-300 print:text-stone-700 ${
+                          <div className="flex items-center gap-1 shrink-0">
+                            {currentUser?.role !== 'admin' && (
+                              <button
+                                onClick={(e) => toggleFavoriteRecipe(recipe.name, e)}
+                                className="p-1.5 text-stone-300 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors print:hidden"
+                                title="Yêu thích"
+                              >
+                                <Star size={16} className={favoriteRecipes.includes(recipe.name) ? "fill-amber-500 text-amber-500" : ""} />
+                              </button>
+                            )}
+                            {currentUser?.role === 'admin' && (
+                              <button
+                                onClick={() => setEditingItem({ type: 'recipe', path: { gIdx: idx, rIdx }, data: recipe })}
+                                className="p-1.5 text-stone-300 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors print:hidden"
+                                title="Sửa công thức"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                            )}
+                            {currentUser?.role === 'admin' && (
+                              <button
+                                onClick={async () => {
+                                  if(window.confirm('Xóa công thức này?')) {
+                                     let updatedCourse = JSON.parse(JSON.stringify(course));
+                                     const recipeModuleIdx = updatedCourse.modules.findIndex((m: any) => m.id === "recipes");
+                                     updatedCourse.modules[recipeModuleIdx].recipeGroups[idx].recipes.splice(rIdx, 1);
+                                     const cloneToSave = JSON.parse(JSON.stringify(updatedCourse, (key, value) => key === 'icon' ? undefined : value));
+                                     await setDoc(doc(db, "course_content", "main"), cloneToSave);
+                                     toast.success('Đã xóa!');
+                                  }
+                                }}
+                                className="p-1.5 text-stone-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors print:hidden"
+                                title="Xóa công thức"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                            <span className={`px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border print:border-stone-300 print:text-stone-700 ${
                             diff === 'Easy' ? 'bg-green-50 text-green-700 border-green-200' :
                             diff === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                             'bg-rose-50 text-rose-700 border-rose-200'
                           }`}>
                             {diff}
                           </span>
+                          </div>
                         </div>
                         
                         {(recipeSearch || showOnlyEasy) && (
@@ -1413,7 +2020,7 @@ export default function App() {
 
           {/* Section 7: Troubleshooting */}
           {activeModuleId === 'troubleshooting' && (() => {
-            const TroubleshootingIcon = courseData.modules[7].icon;
+            const TroubleshootingIcon = course.modules[7].icon;
             return (
             <section id="troubleshooting">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -1421,14 +2028,25 @@ export default function App() {
                 <div className="p-3.5 bg-rose-100 text-rose-700 rounded-2xl shadow-sm">
                   <TroubleshootingIcon size={24} />
                 </div>
-                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{courseData.modules[7].title}</h3>
+                <h3 className="text-[1.75rem] font-bold text-stone-900 tracking-tight">{course.modules[7].title}</h3>
               </div>
-                <button onClick={exportActiveModuleToPDF} className="print:hidden flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                <div className="print:hidden flex items-center gap-3">
+                      {currentUser?.role !== 'admin' && (
+                        <button 
+                          onClick={() => toggleFavoriteModule(activeModuleId)} 
+                          className={`p-2.5 rounded-xl border transition-colors ${favoriteModules.includes(activeModuleId) ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-stone-200 text-stone-400 hover:text-amber-500 hover:border-amber-200 shadow-sm'}`}
+                          title={favoriteModules.includes(activeModuleId) ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                        >
+                          <Star size={18} className={favoriteModules.includes(activeModuleId) ? "fill-amber-500" : ""} />
+                        </button>
+                      )}
+                      <button onClick={exportActiveModuleToPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-sm font-bold transition-colors"><Download size={16} />Xuất PDF slide</button>
+                    </div>
             </div>
-              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{courseData.modules[7].description}</p>
+              <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[7].description}</p>
 
               <div className="space-y-6">
-                {courseData.modules[7].issues?.map((issue: any, idx: number) => (
+                {course.modules[7].issues?.map((issue: any, idx: number) => (
                   <div key={idx} className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-stone-200">
                     <h4 className="font-bold text-xl text-stone-900 mb-6 flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 font-black text-sm">
@@ -1460,14 +2078,45 @@ export default function App() {
           })()}
           </motion.div>
         </AnimatePresence>
+          )}
           
+          
+          <div className="mt-16 pt-8 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
+            <div>
+              <h4 className="font-bold text-stone-900">Hoàn thành bài học này?</h4>
+              <p className="text-sm text-stone-500">Đánh dấu hoàn thành để theo dõi tiến độ của bạn</p>
+            </div>
+            <button
+              onClick={toggleModuleCompletion}
+              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${
+                completedModules.includes(activeModuleId)
+                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                  : "bg-stone-900 text-white hover:bg-stone-800"
+              }`}
+            >
+              {completedModules.includes(activeModuleId) ? (
+                <>
+                  <CheckCircle2 size={18} /> Đã hoàn thành
+                </>
+              ) : (
+                "Đánh dấu hoàn thành"
+              )}
+            </button>
+          </div>
+
+          <Quiz moduleId={activeModuleId} currentUser={currentUser} />
           {/* Footer */}
-          <footer className="mt-24 pt-8 border-t border-stone-200 text-center">
+          <footer className="mt-24 pt-8 pb-4 border-t border-stone-200 text-center">
             <p className="text-sm text-stone-500 font-medium">
               Thiết kế dành riêng cho Học Viên Khởi Nghiệp - Mô hình Take-away Thực Chiến
             </p>
+            <p className="text-xs text-stone-400 font-medium mt-2">
+              Made in by XUANTUYEN
+            </p>
           </footer>
-        </main>
+          </>
+        )}
+        </main>        {!isFocusMode && <NotesPanel currentUser={currentUser} activeModuleId={activeModuleId} />}
       </div>
 
       {/* Mobile Menu Overlay */}
@@ -1479,5 +2128,58 @@ export default function App() {
       )}
 
     </div>
+
+      {editingItem && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 print:hidden">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-stone-100 flex justify-between items-center bg-stone-50">
+              <h3 className="font-bold text-xl text-stone-900">
+                {editingItem.type === 'course' ? 'Sửa Khóa Học' : 
+                 editingItem.type === 'module' ? 'Sửa Module' :
+                 editingItem.type === 'recipeGroup' ? 'Sửa Nhóm Công Thức' :
+                 editingItem.type === 'new_recipe' ? 'Thêm Công Thức' : 'Sửa Công Thức'}
+              </h3>
+              <button onClick={() => setEditingItem(null)} className="p-2 text-stone-400 hover:text-stone-900 bg-white hover:bg-stone-200 rounded-xl transition-colors"><X size={20}/></button>
+            </div>
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              {Object.keys(editingItem.data).map(key => {
+                if (key === 'id' || key === 'icon' || Array.isArray(editingItem.data[key])) return null;
+                return (
+                  <div key={key}>
+                    <label className="block text-sm font-bold text-stone-700 mb-2 capitalize">
+                      {key === 'name' ? 'Tên món' : 
+                       key === 'recipe' ? 'Công thức (Gram)' : 
+                       key === 'usage' ? 'Ghi chú / Công dụng / Sản lượng' : 
+                       key === 'prepTip' ? 'Lưu ý sơ chế & Độ khó' : key}
+                    </label>
+                    {typeof editingItem.data[key] === 'string' && (key === 'description' || key === 'recipe' || key === 'prepTip') ? (
+                      <textarea 
+                        value={editingItem.data[key]} 
+                        onChange={e => setEditingItem({ ...editingItem, data: { ...editingItem.data, [key]: e.target.value } })} 
+                        className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none min-h-[100px]"
+                      />
+                    ) : (
+                      <input 
+                        type="text" 
+                        value={editingItem.data[key]} 
+                        onChange={e => setEditingItem({ ...editingItem, data: { ...editingItem.data, [key]: e.target.value } })} 
+                        className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="p-6 border-t border-stone-100 bg-stone-50 flex justify-end gap-3">
+              <button onClick={() => setEditingItem(null)} className="px-6 py-2.5 text-stone-600 font-bold hover:bg-stone-200 rounded-xl transition-colors">Hủy</button>
+              <button onClick={() => handleSaveInlineEdit(editingItem.data)} className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl flex items-center gap-2 transition-colors shadow-sm">
+                <Save size={18}/> Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </>
   );
 }
