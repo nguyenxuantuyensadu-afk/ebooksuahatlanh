@@ -51,6 +51,48 @@ export const courseData = {
         { name: "Mè đen", time: "0h", note: "Rang chín" },
         { name: "Kỷ tử", time: "15p", note: "Ngâm mềm" }
       ],
+      sweeteners: [
+        { name: "Chà là", type: "Trái cây khô", calories: 28, note: "Tạo ngọt tự nhiên, nhiều chất xơ", prepTip: "Bỏ hạt, ngâm mềm (nếu cứng), xay nhuyễn cùng hạt trước khi nấu." },
+        { name: "Kỷ tử", type: "Trái cây khô", calories: 35, note: "Vị ngọt nhẹ, bổ mắt, đẹp da", prepTip: "Rửa sạch, ngâm nước ấm 15p cho mềm, có thể xay cùng hạt hoặc hãm như trà." },
+        { name: "Mứt trái cây", type: "Mứt", calories: 28, note: "Thơm mùi trái cây, lượng calo thay đổi theo loại", prepTip: "Nên khuấy vào sữa sau khi đã nấu chín để giữ trọn vẹn hương vị trái cây." },
+        { name: "Bột cỏ ngọt (Stevia)", type: "Chiết xuất", calories: 0, note: "Không calo, không tăng đường huyết", prepTip: "Chỉ dùng một lượng rất nhỏ, khuấy vào sau khi sữa chín." },
+        { name: "Mật ong", type: "Mật tự nhiên", calories: 30, note: "Nhiều vitamin, không hợp nấu nhiệt cao", prepTip: "Chỉ khuấy vào sữa khi đã nguội bớt (dưới 50 độ C) để không làm mất dưỡng chất." },
+        { name: "Mật mía", type: "Mật tự nhiên", calories: 29, note: "Chứa nhiều khoáng chất (Sắt, Canxi)", prepTip: "Có thể nấu chung với sữa hoặc khuấy sau khi sữa chín đều được." },
+        { name: "Đường phổi", type: "Đường thô", calories: 40, note: "Vị ngọt thanh, thơm dịu", prepTip: "Đập nhỏ, cho vào nồi nấu cùng sữa cho tan hoàn toàn." },
+        { name: "Siro lá phong", type: "Siro tự nhiên", calories: 26, note: "Hương vị thơm ngon, giàu kẽm", prepTip: "Nên cho vào sau cùng, khuấy tan khi sữa đã nguội bớt." },
+        { name: "Siro cây thùa", type: "Siro tự nhiên", calories: 31, note: "Chỉ số GI thấp, ngọt hơn đường trắng", prepTip: "Cho vào khuấy tan sau khi sữa đã nấu xong." },
+        { name: "Đường thốt nốt", type: "Đường thô", calories: 38, note: "Nhiều vitamin nhóm B, thơm đặc trưng", prepTip: "Cắt nhỏ hoặc đập vụn, đun tan cùng với sữa trong quá trình nấu." },
+        { name: "Đường phèn", type: "Đường kết tinh", calories: 40, note: "Ngọt thanh mát, tan chậm", prepTip: "Cho trực tiếp vào nồi đun cùng sữa cho tan, hoặc nấu thành syrup (nước đường) để dễ pha chế." },
+        { name: "Đường nâu", type: "Đường thô", calories: 38, note: "Còn giữ lại chút mật mía, thơm nhẹ", prepTip: "Cho trực tiếp vào nồi nấu cùng sữa." },
+        { name: "Đường mía thô", type: "Đường thô", calories: 38, note: "Ít tinh chế, giàu vi lượng", prepTip: "Cho trực tiếp vào nồi nấu cùng sữa." }
+      ],
+      sweetenerSuggestions: [
+        {
+          milkType: "Sữa bắp, sữa bí đỏ (nhóm củ quả bùi)",
+          recommended: "Đường phèn",
+          reason: "Đường phèn có vị ngọt thanh mát, không lấn át mà làm nổi bật vị thơm tự nhiên của bắp và bí đỏ."
+        },
+        {
+          milkType: "Sữa hạt điều, hạt macca, hạt óc chó (nhóm hạt béo ngậy)",
+          recommended: "Siro lá phong / Chà là",
+          reason: "Hương vị nồng ấm của siro lá phong hoặc vị ngọt dịu của chà là rất tôn lên độ béo ngậy đặc trưng của nhóm hạt này."
+        },
+        {
+          milkType: "Sữa hạt sen, sữa đậu xanh (nhóm thanh mát, giải nhiệt)",
+          recommended: "Đường thốt nốt / Đường phổi",
+          reason: "Đường thốt nốt có mùi thơm đặc trưng, còn đường phổi ngọt thanh, cả hai đều cực kỳ hợp với tính mát của sen và đậu xanh."
+        },
+        {
+          milkType: "Sữa dành cho người ăn kiêng, tiểu đường",
+          recommended: "Bột cỏ ngọt (Stevia)",
+          reason: "Hoàn toàn không có calo, không làm tăng đường huyết, chỉ cần một lượng rất nhỏ đã đủ tạo độ ngọt."
+        },
+        {
+          milkType: "Sữa gạo lứt, sữa yến mạch (nhóm ngũ cốc)",
+          recommended: "Đường mía thô / Đường nâu",
+          reason: "Giữ lại một phần mật mía, tạo màu sắc hấp dẫn và bổ sung thêm vi lượng khoáng chất phù hợp với dòng ngũ cốc."
+        }
+      ],
       nutritionalPyramid: [
         { level: 5, name: "Chất tạo mùi & Vi chất", percentage: "< 1%", description: "Mè đen, kỷ tử, hoa đậu biếc... Tạo màu sắc, hương vị.", color: "bg-rose-100 border-rose-200 text-rose-800", width: "w-2/5" },
         { level: 4, name: "Chất tạo ngọt tự nhiên", percentage: "2-5%", description: "Đường phèn, chà là, cỏ ngọt... Cung cấp vị ngọt thanh.", color: "bg-orange-100 border-orange-200 text-orange-800", width: "w-1/2" },
@@ -92,7 +134,7 @@ export const courseData = {
           "Hạt nhiều tinh bột (nền) kết hợp với hạt nhiều dầu (béo) là sự kết hợp hoàn hảo nhất.",
           "Nếu dùng rau củ tươi (khoai lang, bí đỏ, bắp non), nên luộc/hấp chín trước rồi mới đem đi xay cùng các hạt khác."
         ]
-      }
+      },
     },
     {
       id: "equipment",
@@ -129,6 +171,27 @@ export const courseData = {
       title: "3. Thiết kế Menu Tối Ưu",
       icon: Coffee,
       description: "Phân khúc 15.000đ - 25.000đ: Đánh mạnh vào tệp khách hàng mua dùng hàng ngày (dân văn phòng, học sinh, người nội trợ). Menu cần ít món nhưng chất lượng, dễ chuẩn bị số lượng lớn.",
+      targetAudience: {
+        title: "Xác định khách hàng mục tiêu",
+        groups: [
+          {
+            name: "Nhóm thế hệ trẻ",
+            description: "Học sinh, sinh viên, dân văn phòng trẻ thích sự tiện lợi, thức uống có màu sắc bắt mắt, hương vị đậm đà và mới lạ. Bắt trend healthy nhưng vẫn cần ngon miệng, bao bì đẹp."
+          },
+          {
+            name: "Những người giảm cân",
+            description: "Quan tâm khắt khe đến lượng calo, chuộng sữa hạt không đường hoặc đường ăn kiêng (cỏ ngọt). Ưu tiên sữa ít tinh bột, giàu protein như hạnh nhân, macca, óc chó."
+          },
+          {
+            name: "Mẹ bầu và bỉm sữa",
+            description: "Tìm kiếm dinh dưỡng sạch, an toàn, giàu canxi, sắt, omega-3 tốt cho thai nhi và gọi sữa mẹ. Rất kỹ tính về nguồn gốc nguyên liệu, sẵn sàng chi trả cao cho chất lượng."
+          },
+          {
+            name: "Nhóm dị ứng đạm và đường trong sữa bò",
+            description: "Những người bất dung nạp Lactose, uống sữa bò bị đầy bụng, khó tiêu. Sữa hạt là thức uống dinh dưỡng thay thế hoàn hảo hàng ngày giúp họ yên tâm sử dụng."
+          }
+        ]
+      },
       menuStrategy: {
         title: "Bí quyết làm menu tối ưu hoá lợi nhuận",
         description: "Phân bổ danh mục đồ uống theo thuật toán tỷ lệ vàng giúp tối đa hóa doanh thu và đánh lừa thị giác (Hiệu ứng chim mồi).",
@@ -201,6 +264,78 @@ export const courseData = {
           reason: "Đóng vai trò là 'Món chim mồi' (Decoy effect) để làm nổi bật sự hợp lý của các món 15-18k, đồng thời phục vụ tệp khách có thu nhập khá."
         }
       ]
+    ,
+      sampleMenus: [
+        {
+          groupName: "Menu cho Nhóm thế hệ trẻ",
+          description: "Tập trung vào sự bắt mắt, hương vị đậm đà và xu hướng mới.",
+          items: [
+            { name: "Sữa bắp nếp lá dứa macchiato", price: "25.000đ" },
+            { name: "Sữa đậu xanh cốt dừa trân châu", price: "22.000đ" },
+            { name: "Sữa khoai môn kem cheese", price: "28.000đ" },
+            { name: "Sữa gạo lứt đậu đỏ trân châu trắng", price: "25.000đ" },
+            { name: "Sữa hạt điều matcha", price: "25.000đ" }
+          ]
+        },
+        {
+          groupName: "Menu cho Người giảm cân",
+          description: "Calo thấp, sử dụng cỏ ngọt, hạt giàu protein, ít tinh bột.",
+          items: [
+            { name: "Sữa hạnh nhân nguyên chất (Stevia)", price: "25.000đ" },
+            { name: "Sữa óc chó yến mạch hạt chia", price: "30.000đ" },
+            { name: "Sữa đậu đen mè đen cỏ ngọt", price: "20.000đ" },
+            { name: "Sữa hạt điều cần tây xanh", price: "25.000đ" },
+            { name: "Sữa diêm mạch đậu gà", price: "35.000đ" }
+          ]
+        },
+        {
+          groupName: "Menu cho Mẹ bầu và bỉm sữa",
+          description: "Giàu canxi, sắt, omega-3, vị thanh nhẹ dễ uống, nguyên liệu organic.",
+          items: [
+            { name: "Sữa óc chó hạnh nhân mè đen", price: "35.000đ" },
+            { name: "Sữa hạt sen macca kỷ tử", price: "35.000đ" },
+            { name: "Sữa gạo lứt đậu đỏ nảy mầm", price: "25.000đ" },
+            { name: "Sữa đậu nành nguyên hạt bí xanh", price: "25.000đ" },
+            { name: "Sữa yến mạch chuối hạt chia", price: "30.000đ" }
+          ]
+        },
+        {
+          groupName: "Menu cho Nhóm dị ứng đạm bò",
+          description: "Hoàn toàn thuần chay, thay thế sữa bò nhưng vẫn đảm bảo canxi và độ ngậy.",
+          items: [
+            { name: "Sữa đậu nành hạnh nhân", price: "25.000đ" },
+            { name: "Sữa yến mạch macca hương vani", price: "30.000đ" },
+            { name: "Sữa gạo rang hạt điều", price: "25.000đ" },
+            { name: "Sữa hạt sen cốt dừa", price: "25.000đ" },
+            { name: "Sữa hạt điều cacao", price: "28.000đ" }
+          ]
+        }
+      ],
+      menuTips: {
+        title: "Mẹo thiết kế menu tăng doanh số",
+        tips: [
+          {
+            title: "Nguyên tắc vị trí",
+            content: "Đặt các món mang lại lợi nhuận cao nhất ở góc trên cùng bên phải hoặc giữa menu, vì đó là nơi mắt khách hàng thường tập trung đầu tiên."
+          },
+          {
+            title: "Tên món hấp dẫn",
+            content: "Sử dụng các từ ngữ miêu tả hương vị, xuất xứ. Ví dụ thay vì 'Sữa bắp', hãy dùng 'Sữa bắp nếp non lá dứa' hoặc 'Sữa bắp macchiato'."
+          },
+          {
+            title: "Hiệu ứng chim mồi (Decoy Effect)",
+            content: "Đưa ra mức giá size Lớn chỉ nhỉnh hơn size Vừa một chút (vd: Size M 25k, Size L 29k) để hướng khách hàng chọn size Lớn."
+          },
+          {
+            title: "Tối giản ký hiệu tiền tệ",
+            content: "Sử dụng '25k' hoặc '25' thay vì '25.000 VNĐ' giúp giảm bớt rào cản tâm lý về việc tiêu tiền của khách hàng."
+          },
+          {
+            title: "Tạo Combo giá trị",
+            content: "Kết hợp bán sữa hạt kèm bánh ngọt ăn sáng, hoặc combo gia đình (Mua 3 tặng 1) để tăng giá trị trung bình đơn hàng."
+          }
+        ]
+      }
     },
     {
       id: "costing",

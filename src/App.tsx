@@ -53,7 +53,8 @@ export default function App() {
   const [activeModuleId, setActiveModuleId] = useState(course.modules[0].id);
   const [recipeSearch, setRecipeSearch] = useState("");
   const [moduleSearch, setModuleSearch] = useState("");
-  const [showOnlyEasy, setShowOnlyEasy] = useState(false);
+  const [difficultyFilter, setDifficultyFilter] = useState<string | null>(null);
+  const [selectedMilkType, setSelectedMilkType] = useState<string>("Sữa bắp, sữa bí đỏ (nhóm củ quả bùi)");
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
 
@@ -892,6 +893,63 @@ export default function App() {
                       </div>
                     </div>
 
+
+                    <div>
+                      <h4 className="font-bold text-xl text-stone-900 mb-6 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-pink-500"></span>
+                        Các nguyên liệu tạo ngọt tốt cho sức khỏe
+                      </h4>
+                      <div className="bg-stone-50 border border-stone-200 rounded-[1.5rem] p-6 md:p-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                          {course.modules[0].sweeteners?.map((item: any, idx: number) => (
+                            <div key={idx} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col gap-2">
+                              <div className="flex justify-between items-start">
+                                <h5 className="font-bold text-stone-900">{item.name}</h5>
+                                <span className="px-2 py-1 bg-pink-50 text-pink-700 text-[10px] font-bold rounded-lg uppercase tracking-wider">{item.type}</span>
+                              </div>
+                              <p className="text-sm text-stone-600 font-medium">{item.note}</p>
+                              <div className="bg-pink-50/50 p-2.5 rounded-lg border border-pink-100">
+                                <p className="text-[11px] uppercase tracking-wider font-bold text-pink-800 mb-1">Cách dùng nấu sữa</p>
+                                <p className="text-xs font-medium text-pink-900 leading-relaxed">{item.prepTip}</p>
+                              </div>
+                              <div className="mt-auto pt-3 border-t border-stone-100 flex items-center gap-2">
+                                <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Năng lượng (10g):</span>
+                                <span className="text-sm font-black text-pink-600">{item.calories} kcal</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
+                           <div className="bg-stone-900 px-6 py-4">
+                              <h5 className="font-bold text-white tracking-wide">Bảng so sánh năng lượng (trên 10g)</h5>
+                           </div>
+                           <div className="overflow-x-auto">
+                             <table className="w-full text-left border-collapse min-w-[600px]">
+                               <thead>
+                                 <tr className="bg-stone-50 border-b border-stone-200">
+                                   <th className="py-4 px-6 text-xs uppercase tracking-widest font-bold text-stone-500">Nguyên liệu</th>
+                                   <th className="py-4 px-6 text-xs uppercase tracking-widest font-bold text-stone-500">Phân loại</th>
+                                   <th className="py-4 px-6 text-xs uppercase tracking-widest font-bold text-stone-500">Cách sơ chế / Nấu chung</th>
+                                   <th className="py-4 px-6 text-xs uppercase tracking-widest font-bold text-stone-500 text-right">Năng lượng (kcal)</th>
+                                 </tr>
+                               </thead>
+                               <tbody className="divide-y divide-stone-100">
+                                  {course.modules[0].sweeteners?.map((item: any, idx: number) => (
+                                    <tr key={idx} className="hover:bg-stone-50 transition-colors">
+                                      <td className="py-3 px-6 font-bold text-stone-800">{item.name}</td>
+                                      <td className="py-3 px-6 font-medium text-stone-600">{item.type}</td>
+                                      <td className="py-3 px-6 text-sm text-stone-700">{item.prepTip}</td>
+                                      <td className="py-3 px-6 font-black text-pink-600 text-right">{item.calories}</td>
+                                    </tr>
+                                  ))}
+                               </tbody>
+                             </table>
+                           </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <h4 className="font-bold text-xl text-stone-900 mb-6 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
@@ -1001,6 +1059,27 @@ export default function App() {
             </div>
               <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[2].description}</p>
 
+
+              <div className="mb-10 bg-amber-50/50 rounded-[2rem] p-8 md:p-10 border border-amber-100">
+                <h4 className="font-bold text-2xl text-amber-900 mb-8 flex items-center gap-3">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                  {course.modules[2].targetAudience?.title || 'Xác định khách hàng mục tiêu'}
+                </h4>
+                <div className="grid md:grid-cols-2 gap-6">
+                  {course.modules[2].targetAudience?.groups.map((group: any, idx: number) => (
+                    <div key={idx} className="bg-white p-6 rounded-2xl border border-amber-100 shadow-sm flex flex-col gap-3 transition-transform hover:-translate-y-1">
+                      <div className="flex items-center gap-3">
+                         <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 font-black text-sm">
+                           {idx + 1}
+                         </div>
+                         <h5 className="font-bold text-stone-900 text-lg">{group.name}</h5>
+                      </div>
+                      <p className="text-stone-600 font-medium leading-relaxed pl-11">{group.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="bg-white rounded-[2rem] shadow-sm border border-stone-200 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -1029,6 +1108,57 @@ export default function App() {
                   </table>
                 </div>
               </div>
+
+              {course.modules[2].sampleMenus && (
+                <div className="mt-10">
+                  <h4 className="font-bold text-2xl text-stone-900 mb-6 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Menu Gợi Ý Theo Nhóm Khách Hàng
+                  </h4>
+                  <div className="grid md:grid-cols-2 gap-6 mb-10">
+                    {course.modules[2].sampleMenus.map((menu: any, idx: number) => (
+                      <div key={idx} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden flex flex-col">
+                        <div className="bg-stone-900 px-6 py-4">
+                          <h5 className="font-bold text-white text-lg tracking-wide">{menu.groupName}</h5>
+                          <p className="text-stone-300 text-sm mt-1">{menu.description}</p>
+                        </div>
+                        <div className="p-0 flex-grow">
+                          <ul className="divide-y divide-stone-100">
+                            {menu.items.map((item: any, iIdx: number) => (
+                              <li key={iIdx} className="flex justify-between items-center px-6 py-4 hover:bg-stone-50 transition-colors">
+                                <span className="font-bold text-stone-800">{item.name}</span>
+                                <span className="font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg text-sm">{item.price}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {course.modules[2].menuTips && (
+                <div className="mb-10 bg-rose-50/50 rounded-[2rem] p-8 md:p-10 border border-rose-100">
+                  <h4 className="font-bold text-2xl text-rose-900 mb-8 flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                    {course.modules[2].menuTips.title}
+                  </h4>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {course.modules[2].menuTips.tips.map((tip: any, idx: number) => (
+                      <div key={idx} className="bg-white p-6 rounded-2xl border border-rose-100 shadow-sm transition-transform hover:-translate-y-1">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 font-black text-sm">
+                            {idx + 1}
+                          </div>
+                          <h5 className="font-bold text-stone-900 text-lg">{tip.title}</h5>
+                        </div>
+                        <p className="text-stone-600 font-medium leading-relaxed pl-11">{tip.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {course.modules[2].menuStrategy && (
                 <div className="mt-10">
@@ -1683,23 +1813,47 @@ export default function App() {
                     className="w-full pl-12 pr-6 py-4 bg-stone-50 border border-stone-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all font-medium text-stone-900 placeholder:text-stone-400 shadow-sm"
                   />
                 </div>
-                <button 
-                  onClick={() => setShowOnlyEasy(!showOnlyEasy)}
-                  className={`px-8 py-4 rounded-2xl font-bold transition-all border whitespace-nowrap shadow-sm flex items-center gap-2 justify-center ${showOnlyEasy ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-stone-600 border-stone-200 hover:border-teal-200 hover:bg-teal-50'}`}
-                >
-                  {showOnlyEasy ? (
-                    <>
-                      <CheckCircle2 size={20} className="text-teal-200" />
-                      Đang lọc: Easy
-                    </>
-                  ) : (
-                    'Chỉ hiện món Easy'
-                  )}
-                </button>
+                <div className="flex bg-stone-100 p-1.5 rounded-2xl w-full md:w-auto overflow-x-auto shadow-inner border border-stone-200">
+                  <button
+                    onClick={() => setDifficultyFilter(null)}
+                    className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
+                      difficultyFilter === null ? 'bg-white text-stone-800 shadow-sm ring-1 ring-stone-200/50' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-200/50'
+                    }`}
+                  >
+                    Tất cả
+                  </button>
+                  <button
+                    onClick={() => setDifficultyFilter('Easy')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
+                      difficultyFilter === 'Easy' ? 'bg-green-50 text-green-700 shadow-sm ring-1 ring-green-200/50' : 'text-stone-500 hover:text-green-700 hover:bg-green-50/50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>
+                    Dễ (Easy)
+                  </button>
+                  <button
+                    onClick={() => setDifficultyFilter('Medium')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
+                      difficultyFilter === 'Medium' ? 'bg-amber-50 text-amber-700 shadow-sm ring-1 ring-amber-200/50' : 'text-stone-500 hover:text-amber-700 hover:bg-amber-50/50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+                    Trung bình
+                  </button>
+                  <button
+                    onClick={() => setDifficultyFilter('Hard')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
+                      difficultyFilter === 'Hard' ? 'bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200/50' : 'text-stone-500 hover:text-rose-700 hover:bg-rose-50/50'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+                    Nâng cao
+                  </button>
+                </div>
               </div>
 
               {/* Group Tabs */}
-              {!recipeSearch && !showOnlyEasy && (
+              {!recipeSearch && !difficultyFilter && (
                 <div className="flex flex-wrap gap-2 mb-8 print:hidden">
                   {course.modules[6].recipeGroups?.map((group, idx) => (
                     <button
@@ -1718,7 +1872,7 @@ export default function App() {
               )}
 
               {/* Active Group Description */}
-              {!recipeSearch && !showOnlyEasy && course.modules[6].recipeGroups && (
+              {!recipeSearch && !difficultyFilter && course.modules[6].recipeGroups && (
                 <div className="mb-6 p-4 bg-teal-50 rounded-xl border border-teal-100 print:hidden flex items-center justify-between gap-4">
                                     <p className="text-teal-800 text-sm font-medium flex-1">
                     {course.modules[6].recipeGroups[activeGroupIdx].groupDesc}
@@ -1736,7 +1890,7 @@ export default function App() {
                   const matchGroup = group.groupName.toLowerCase().includes(searchLower) || group.groupDesc.toLowerCase().includes(searchLower);
                   
                   // If not searching, only show active group
-                  if (!recipeSearch && !showOnlyEasy && idx !== activeGroupIdx) {
+                  if (!recipeSearch && !difficultyFilter && idx !== activeGroupIdx) {
                     return [];
                   }
 
@@ -1747,8 +1901,8 @@ export default function App() {
                       recipe.recipe.toLowerCase().includes(searchLower) ||
                       recipe.prepTip.toLowerCase().includes(searchLower);
                     
-                    if (showOnlyEasy) {
-                      return searchMatch && getDifficulty(recipe.prepTip) === "Easy";
+                    if (difficultyFilter) {
+                      return searchMatch && getDifficulty(recipe.prepTip) === difficultyFilter;
                     }
                     return searchMatch;
                   });
@@ -1823,7 +1977,7 @@ export default function App() {
                           </div>
                         </div>
                         
-                        {(recipeSearch || showOnlyEasy) && (
+                        {(recipeSearch || difficultyFilter) && (
                           <div className="mb-4">
                             <span className="inline-block px-2.5 py-1 bg-stone-100 text-stone-600 text-[10px] font-bold uppercase tracking-widest rounded-lg">
                               {group.groupName}
