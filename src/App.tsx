@@ -38,7 +38,7 @@ export default function App() {
         if (data.modules && Array.isArray(data.modules)) {
            merged.modules = data.modules.map((m: any) => {
              const defaultModule = defaultCourseData.modules.find(dm => dm.id === m.id);
-             const mergedModule = { ...m, icon: defaultModule?.icon || null };
+             const mergedModule = { ...defaultModule, ...m, icon: defaultModule?.icon || null };
              
              // Sync newly added recipe groups from defaultData if they are missing in Firebase
              if (mergedModule.id === "recipes" && defaultModule && defaultModule.recipeGroups) {
@@ -1002,6 +1002,22 @@ export default function App() {
                   </div>
                   <p className="text-stone-600 mb-10 text-[1.1rem] leading-relaxed max-w-4xl">{course.modules[0].description}</p>
                   
+                  {course.modules[0].definition && (
+                    <div className="mb-10 bg-indigo-50/50 rounded-[2rem] border border-indigo-100 p-8">
+                      <h4 className="font-bold text-2xl text-indigo-900 mb-6 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                        {course.modules[0].definition.title}
+                      </h4>
+                      <div className="space-y-4">
+                        {course.modules[0].definition.content.map((paragraph: string, idx: number) => (
+                          <p key={idx} className="text-indigo-800/80 leading-relaxed font-medium">
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-10">
                     <div>
                       <h4 className="font-bold text-xl text-stone-900 mb-6 flex items-center gap-2">
