@@ -5,8 +5,37 @@ import { courseData } from '../data';
 import { collection, getDocs, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
+
+const extractLockablePaths = (course: any) => {
+  const paths: any[] = [];
+  course.modules?.forEach((module: any) => {
+    const modObj = { moduleId: module.id, moduleTitle: module.title, arrays: [] as any[] };
+    Object.entries(module).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        const arrObj = { key, items: [] as any[] };
+        value.forEach((item: any, idx: number) => {
+          let label = `Mục ${idx + 1}`;
+          if (typeof item === 'string') label = item.substring(0, 50) + (item.length > 50 ? '...' : '');
+          else if (item.name) label = item.name;
+          else if (item.title) label = item.title;
+          else if (item.group) label = item.group;
+          else if (item.groupName) label = item.groupName;
+          else if (item.task) label = item.task;
+          else if (item.problem) label = item.problem;
+          
+          arrObj.items.push({ path: `${module.id}.${key}.${idx}`, label });
+        });
+        modObj.arrays.push(arrObj);
+      }
+    });
+    if (modObj.arrays.length > 0) paths.push(modObj);
+  });
+  return paths;
+};
+
 export default function AdminDashboard({ onClose, courseData }: { onClose: () => void, courseData: any }) {
   const [activeTab, setActiveTab] = useState<'users' | 'content' | 'full_content'>('users');
+  const [userSubTab, setUserSubTab] = useState<'list' | 'locks'>('list');
   const [jsonContent, setJsonContent] = useState('');
   const [jsonError, setJsonError] = useState('');
   const [users, setUsers] = useState<any[]>([]);
@@ -26,6 +55,7 @@ export default function AdminDashboard({ onClose, courseData }: { onClose: () =>
   const [itemToDelete, setItemToDelete] = useState<{id: string, type: "user" | "recipe"} | null>(null);
 
   const [editingUnlockedModules, setEditingUnlockedModules] = useState<string[]>([]);
+  const [editingLockedPaths, setEditingLockedPaths] = useState<string[]>([]);
 
   useEffect(() => {
     if (activeTab === 'full_content' && courseData) {
@@ -37,6 +67,24 @@ export default function AdminDashboard({ onClose, courseData }: { onClose: () =>
       setJsonError('');
     }
   }, [activeTab, courseData]);
+
+  
+  const toggleLock = async (path: string) => {
+    const currentLocks = courseData.lockedPaths || [];
+    const newLocks = currentLocks.includes(path) 
+      ? currentLocks.filter((p: string) => p !== path) 
+      : [...currentLocks, path];
+    
+    const updatedCourse = { ...courseData, lockedPaths: newLocks };
+    const cloneToSave = JSON.parse(JSON.stringify(updatedCourse, (key, value) => key === 'icon' ? undefined : value));
+    
+    try {
+      await setDoc(doc(db, "course_content", "main"), cloneToSave);
+      toast.success(newLocks.includes(path) ? 'Đã khoá nội dung' : 'Đã mở khoá nội dung');
+    } catch (e) {
+      toast.error('Lỗi khi cập nhật khoá!');
+    }
+  };
 
   const handleSaveJson = async () => {
     try {
@@ -153,7 +201,8 @@ export default function AdminDashboard({ onClose, courseData }: { onClose: () =>
     try {
       await setDoc(doc(db, "users", editingUser.id), {
         ...editingUser,
-        unlockedModules: editingUnlockedModules
+        unlockedModules: editingUnlockedModules,
+        lockedPaths: editingLockedPaths
       });
       setEditingUser(null);
       fetchUsers();
@@ -212,29 +261,74 @@ return (
             <p className="text-sm font-medium text-stone-500 mb-4">
               Học viên: <span className="font-bold text-stone-900">{editingUser.username}</span>
             </p>
-            <div className="space-y-2 mb-6 max-h-96 overflow-y-auto pr-2">
+            <div className="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-2">
               {courseData.modules.map(mod => {
                 const isUnlocked = editingUnlockedModules.includes(mod.id);
+                // Lấy các mục có thể khoá của module này
+                const lockableData = extractLockablePaths(courseData).find(m => m.moduleId === mod.id);
+                
                 return (
-                  <div key={mod.id} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200">
-                    <div className="flex items-center gap-3">
-                      {isUnlocked ? <Unlock size={18} className="text-emerald-500" /> : <Lock size={18} className="text-stone-400" />}
-                      <span className="text-sm font-semibold text-stone-700 truncate w-48">{mod.title}</span>
+                  <div key={mod.id} className="bg-stone-50 rounded-xl border border-stone-200 overflow-hidden">
+                    <div className="flex items-center justify-between p-3 bg-stone-100/50">
+                      <div className="flex items-center gap-3">
+                        {isUnlocked ? <Unlock size={18} className="text-emerald-500" /> : <Lock size={18} className="text-stone-400" />}
+                        <span className="text-sm font-bold text-stone-800 truncate w-48">{mod.title}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if (isUnlocked) {
+                            setEditingUnlockedModules(prev => prev.filter(id => id !== mod.id));
+                          } else {
+                            setEditingUnlockedModules(prev => [...prev, mod.id]);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                          isUnlocked ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+                        }`}
+                      >
+                        {isUnlocked ? "Khóa Toàn Bộ" : "Mở Module"}
+                      </button>
                     </div>
-                    <button 
-                      onClick={() => {
-                        if (isUnlocked) {
-                          setEditingUnlockedModules(prev => prev.filter(id => id !== mod.id));
-                        } else {
-                          setEditingUnlockedModules(prev => [...prev, mod.id]);
-                        }
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                        isUnlocked ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-stone-200 text-stone-600 hover:bg-stone-300"
-                      }`}
-                    >
-                      {isUnlocked ? "Khóa lại" : "Mở khóa"}
-                    </button>
+                    
+                    {/* Các mục nhỏ bên trong module */}
+                    {isUnlocked && lockableData && lockableData.arrays.length > 0 && (
+                      <div className="p-3 bg-white border-t border-stone-200 space-y-4">
+                        {lockableData.arrays.map(arr => (
+                          <div key={arr.key}>
+                            <h5 className="font-bold text-stone-600 text-[10px] mb-2 uppercase tracking-wider">{arr.key}</h5>
+                            <div className="space-y-1">
+                              {arr.items.map(item => {
+                                const isItemLocked = editingLockedPaths.includes(item.path);
+                                // Cũng kiểm tra xem có bị khoá chung không
+                                const isGlobalLocked = courseData.lockedPaths?.includes(item.path);
+                                
+                                return (
+                                  <div key={item.path} className="flex items-center justify-between p-2 hover:bg-stone-50 rounded-lg transition-colors border border-transparent">
+                                    <span className={`text-xs font-medium truncate pr-2 ${isItemLocked || isGlobalLocked ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
+                                      {item.label}
+                                      {isGlobalLocked && <span className="ml-2 text-[9px] bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Khoá chung</span>}
+                                    </span>
+                                    {!isGlobalLocked && (
+                                      <button
+                                        onClick={() => {
+                                          setEditingLockedPaths(prev => 
+                                            isItemLocked ? prev.filter(p => p !== item.path) : [...prev, item.path]
+                                          );
+                                        }}
+                                        className={`p-1.5 rounded-md transition-colors shrink-0 flex items-center justify-center ${isItemLocked ? 'bg-rose-100 text-rose-600 hover:bg-rose-200' : 'bg-stone-100 text-stone-400 hover:bg-stone-200 hover:text-stone-600'}`}
+                                        title={isItemLocked ? "Mở khoá mục này" : "Khoá mục này"}
+                                      >
+                                        {isItemLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -284,7 +378,13 @@ return (
       </div>
 
       {activeTab === 'users' && (
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="space-y-6">
+          <div className="flex gap-4 border-b border-stone-200 pb-4">
+             <button onClick={() => setUserSubTab('list')} className={`px-4 py-2.5 font-bold rounded-xl transition-colors ${userSubTab === 'list' ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-500 hover:bg-stone-100'}`}>Danh sách Học viên</button>
+             <button onClick={() => setUserSubTab('locks')} className={`px-4 py-2.5 font-bold rounded-xl flex items-center gap-2 transition-colors ${userSubTab === 'locks' ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-500 hover:bg-stone-100'}`}><Lock size={16}/> Khoá Nội Dung Chung</button>
+          </div>
+          {userSubTab === 'list' && (
+            <div className="grid md:grid-cols-3 gap-8">
           <div className="md:col-span-1">
             <div className="bg-stone-50 p-6 rounded-[2rem] border border-stone-200 sticky top-24">
               <h3 className="font-bold text-lg text-stone-900 mb-6">Tạo tài khoản mới</h3>
@@ -339,6 +439,7 @@ return (
                                   e.stopPropagation();
                                   setEditingUser(user);
                                   setEditingUnlockedModules(user.unlockedModules || []);
+                                  setEditingLockedPaths(user.lockedPaths || []);
                                 }} className="p-2 text-stone-400 hover:text-emerald-500 bg-white hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100" title="Cấp quyền">
                                   <Settings2 size={16} />
                                 </button>
@@ -361,8 +462,46 @@ return (
             </div>
           </div>
         </div>
+          )}
+          {userSubTab === 'locks' && (
+            <div className="bg-stone-50 p-6 rounded-[2rem] border border-stone-200 max-w-4xl">
+              <h3 className="font-bold text-lg text-stone-900 mb-6 flex items-center gap-2"><Lock size={20} className="text-stone-500"/> Quản lý Khoá nội dung</h3>
+              <p className="text-stone-500 text-sm mb-6">Bạn có thể chọn khoá các mục nhỏ bên trong từng module. Người học thông thường sẽ không nhìn thấy các nội dung bị khoá.</p>
+              <div className="space-y-6">
+                {extractLockablePaths(courseData).map((mod: any) => (
+                  <div key={mod.moduleId} className="bg-white p-5 rounded-2xl border border-stone-100 shadow-sm">
+                    <h4 className="font-bold text-stone-800 text-lg mb-4 pb-2 border-b border-stone-100">{mod.moduleTitle}</h4>
+                    <div className="space-y-6">
+                      {mod.arrays.map((arr: any) => (
+                        <div key={arr.key}>
+                          <h5 className="font-bold text-stone-600 text-sm mb-3 uppercase tracking-wider bg-stone-50 py-1.5 px-3 rounded-lg inline-block">{arr.key}</h5>
+                          <div className="flex flex-col gap-2 pl-2">
+                            {arr.items.map((item: any) => {
+                              const isLocked = courseData.lockedPaths?.includes(item.path);
+                              return (
+                                <div key={item.path} className="flex items-center justify-between p-3 hover:bg-stone-50 rounded-xl transition-colors border border-transparent hover:border-stone-100">
+                                  <span className={`text-sm font-medium truncate pr-4 ${isLocked ? 'text-stone-400 line-through' : 'text-stone-700'}`}>{item.label}</span>
+                                  <button
+                                    onClick={() => toggleLock(item.path)}
+                                    className={`p-2 rounded-lg transition-colors shrink-0 flex items-center justify-center ${isLocked ? 'bg-rose-100 text-rose-600 hover:bg-rose-200' : 'bg-stone-100 text-stone-400 hover:bg-stone-200 hover:text-stone-600'}`}
+                                    title={isLocked ? "Mở khoá" : "Khoá lại"}
+                                  >
+                                    {isLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
-
       {activeTab === 'content' && (
         <div className="grid md:grid-cols-3 gap-8">
           <div className="md:col-span-1">
@@ -448,6 +587,8 @@ return (
           </div>
         </div>
       )}
+
+      
 
       {activeTab === 'full_content' && (
         <div className="bg-white rounded-[2rem] border border-stone-200 overflow-hidden shadow-sm p-6">

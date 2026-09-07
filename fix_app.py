@@ -3,73 +3,40 @@ import re
 with open('src/App.tsx', 'r') as f:
     content = f.read()
 
-bad_block = """              {course.modules[2].menuStrategy && (
-              {course.modules[2].sampleMenus && (
-                <div className="mt-10">
-                  <h4 className="font-bold text-2xl text-stone-900 mb-6 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Menu Gợi Ý Theo Nhóm Khách Hàng
-                  </h4>
-                  <div className="grid md:grid-cols-2 gap-6 mb-10">
-                    {course.modules[2].sampleMenus.map((menu: any, idx: number) => (
-                      <div key={idx} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden flex flex-col">
-                        <div className="bg-stone-900 px-6 py-4">
-                          <h5 className="font-bold text-white text-lg tracking-wide">{menu.groupName}</h5>
-                          <p className="text-stone-300 text-sm mt-1">{menu.description}</p>
-                        </div>
-                        <div className="p-0 flex-grow">
-                          <ul className="divide-y divide-stone-100">
-                            {menu.items.map((item: any, iIdx: number) => (
-                              <li key={iIdx} className="flex justify-between items-center px-6 py-4 hover:bg-stone-50 transition-colors">
-                                <span className="font-bold text-stone-800">{item.name}</span>
-                                <span className="font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg text-sm">{item.price}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+old_logic = """             // Sync newly added recipe groups from defaultData if they are missing in Firebase
+             if (mergedModule.id === "recipes" && defaultModule && defaultModule.recipeGroups) {
+                if (!mergedModule.recipeGroups) mergedModule.recipeGroups = [];
+                defaultModule.recipeGroups.forEach(defaultGroup => {
+                   const existingGroup = mergedModule.recipeGroups.find((g: any) => g.groupName === defaultGroup.groupName);
+                   if (!existingGroup) {
+                      mergedModule.recipeGroups.push(defaultGroup);
+                   }
+                });
+             }"""
 
-                <div className="mt-10">
-                  <h4 className="text-xl font-bold text-stone-900 mb-2">{course.modules[2].menuStrategy.title}</h4>"""
+new_logic = """             // Sync newly added recipe groups from defaultData if they are missing in Firebase
+             if (mergedModule.id === "recipes" && defaultModule && defaultModule.recipeGroups) {
+                let currentGroups = mergedModule.recipeGroups ? [...mergedModule.recipeGroups] : [];
+                let hasChanges = false;
+                defaultModule.recipeGroups.forEach(defaultGroup => {
+                   const existingGroup = currentGroups.find((g: any) => g.groupName === defaultGroup.groupName);
+                   if (!existingGroup) {
+                      currentGroups.push(defaultGroup);
+                      hasChanges = true;
+                   }
+                });
+                mergedModule.recipeGroups = currentGroups;
+                
+                if (hasChanges) {
+                    setTimeout(() => {
+                        setDoc(doc(db, "course_content", "main"), { ...defaultCourseData, ...data, modules: merged.modules }, { merge: true }).catch(console.error);
+                    }, 2000);
+                }
+             }"""
 
-good_block = """              {course.modules[2].sampleMenus && (
-                <div className="mt-10">
-                  <h4 className="font-bold text-2xl text-stone-900 mb-6 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Menu Gợi Ý Theo Nhóm Khách Hàng
-                  </h4>
-                  <div className="grid md:grid-cols-2 gap-6 mb-10">
-                    {course.modules[2].sampleMenus.map((menu: any, idx: number) => (
-                      <div key={idx} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden flex flex-col">
-                        <div className="bg-stone-900 px-6 py-4">
-                          <h5 className="font-bold text-white text-lg tracking-wide">{menu.groupName}</h5>
-                          <p className="text-stone-300 text-sm mt-1">{menu.description}</p>
-                        </div>
-                        <div className="p-0 flex-grow">
-                          <ul className="divide-y divide-stone-100">
-                            {menu.items.map((item: any, iIdx: number) => (
-                              <li key={iIdx} className="flex justify-between items-center px-6 py-4 hover:bg-stone-50 transition-colors">
-                                <span className="font-bold text-stone-800">{item.name}</span>
-                                <span className="font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg text-sm">{item.price}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {course.modules[2].menuStrategy && (
-                <div className="mt-10">
-                  <h4 className="text-xl font-bold text-stone-900 mb-2">{course.modules[2].menuStrategy.title}</h4>"""
-
-content = content.replace(bad_block, good_block)
+content = content.replace(old_logic, new_logic)
 
 with open('src/App.tsx', 'w') as f:
     f.write(content)
+
+print("Updated App.tsx again")

@@ -4,7 +4,7 @@ import AdminDashboard from "./components/AdminDashboard";
 import NotesPanel from './components/NotesPanel';
 import Quiz from './components/Quiz';
 
-import { Plus, Trash2, CheckCircle2, ChevronRight, Menu, X, Search, ChevronDown, ChevronUp, Printer, Download, LogOut, Lock, Star, Eye, Maximize, Minimize , Edit2, Save } from "lucide-react";
+import { Plus, Trash2, CheckCircle2, ChevronRight, Menu, X, Search, ChevronDown, ChevronUp, Printer, Download, LogOut, Lock, Star, Eye, Maximize, Minimize , Edit2, Save, Snowflake, Heart } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -14,11 +14,22 @@ import { courseData as defaultCourseData } from "./data";
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
+
+const healthGoals = [
+  { id: 'giam-can', label: 'Giảm cân / Giữ dáng', color: 'text-rose-600 bg-rose-50 ring-rose-200/50', iconColor: 'bg-rose-500', keywords: ['giảm cân', 'giữ dáng', 'siết mỡ'] },
+  { id: 'tang-co', label: 'Tăng cơ', color: 'text-blue-600 bg-blue-50 ring-blue-200/50', iconColor: 'bg-blue-500', keywords: ['tăng cơ', 'protein', 'gym', 'thể thao'] },
+  { id: 'tang-can', label: 'Tăng cân', color: 'text-amber-600 bg-amber-50 ring-amber-200/50', iconColor: 'bg-amber-500', keywords: ['tăng cân', 'béo ngậy', 'calo cao'] },
+  { id: 'canxi', label: 'Bổ sung canxi', color: 'text-emerald-600 bg-emerald-50 ring-emerald-200/50', iconColor: 'bg-emerald-500', keywords: ['canxi', 'xương khớp'] },
+  { id: 'dep-da', label: 'Đẹp da', color: 'text-pink-600 bg-pink-50 ring-pink-200/50', iconColor: 'bg-pink-500', keywords: ['đẹp da', 'lão hóa', 'trẻ hóa'] },
+  { id: 'tieu-hoa', label: 'Tiêu hóa / Mát gan', color: 'text-teal-600 bg-teal-50 ring-teal-200/50', iconColor: 'bg-teal-500', keywords: ['tiêu hóa', 'mát gan', 'thanh lọc', 'rau củ', 'giải nhiệt'] },
+  { id: 'tri-nao', label: 'Trí não', color: 'text-indigo-600 bg-indigo-50 ring-indigo-200/50', iconColor: 'bg-indigo-500', keywords: ['trí não', 'stress', 'thần kinh'] },
+];
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [showAdmin, setShowAdmin] = useState(false);
 
-  const [course, setCourse] = useState(defaultCourseData);
+  const [courseState, setCourseState] = useState(defaultCourseData);
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, "course_content", "main"), (docSnap) => {
       if (docSnap.exists()) {
@@ -27,14 +38,91 @@ export default function App() {
         if (data.modules && Array.isArray(data.modules)) {
            merged.modules = data.modules.map((m: any) => {
              const defaultModule = defaultCourseData.modules.find(dm => dm.id === m.id);
-             return { ...m, icon: defaultModule?.icon || null };
+             const mergedModule = { ...m, icon: defaultModule?.icon || null };
+             
+             // Sync newly added recipe groups from defaultData if they are missing in Firebase
+             if (mergedModule.id === "recipes" && defaultModule && defaultModule.recipeGroups) {
+                let currentGroups = mergedModule.recipeGroups ? [...mergedModule.recipeGroups] : [];
+                let hasChanges = false;
+                defaultModule.recipeGroups.forEach(defaultGroup => {
+                   const existingGroup = currentGroups.find((g: any) => g.groupName === defaultGroup.groupName);
+                   if (!existingGroup) {
+                      currentGroups.push(defaultGroup);
+                      hasChanges = true;
+                   }
+                });
+                mergedModule.recipeGroups = currentGroups;
+                mergedModule._needsSync = hasChanges; // flag for after map
+             }
+             
+             return mergedModule;
            });
+           
+           const recipeMod = merged.modules.find((m: any) => m.id === "recipes");
+           if (recipeMod && recipeMod._needsSync) {
+               delete recipeMod._needsSync;
+               setTimeout(() => {
+                   const cloneToSave = JSON.parse(JSON.stringify(merged, (key, value) => key === 'icon' ? undefined : value));
+                   setDoc(doc(db, "course_content", "main"), cloneToSave).catch(console.error);
+               }, 2000);
+           }
         }
-        setCourse(merged);
+        setCourseState(merged);
       }
     });
     return () => unsubscribe();
   }, []);
+
+  const course = useMemo(() => {
+    const userLockedPaths = currentUser?.lockedPaths || [];
+    const globalLockedPaths = courseState.lockedPaths || [];
+    const allLockedPaths = [...new Set([...globalLockedPaths, ...userLockedPaths])];
+
+    if (currentUser?.role === 'admin' || allLockedPaths.length === 0) return courseState;
+    
+    const clone = JSON.parse(JSON.stringify(courseState));
+    
+    clone.modules?.forEach((module: any) => {
+      Object.keys(module).forEach(key => {
+        if (Array.isArray(module[key])) {
+          module[key] = module[key].map((item: any, idx: number) => {
+            if (allLockedPaths.includes(`${module.id}.${key}.${idx}`)) {
+              if (typeof item === 'string') return "🔒 Nội dung bị khoá (Yêu cầu quyền truy cập)";
+              
+              const maskedItem: any = { __isLocked: true };
+              Object.keys(item).forEach(k => {
+                const val = item[k];
+                if (typeof val === 'string') {
+                  if (['name', 'title', 'group', 'groupName', 'task', 'problem', 'desc', 'description', 'role', 'recipe', 'usage', 'prepTip', 'item'].includes(k)) {
+                     maskedItem[k] = "🔒 Nội dung bị khoá";
+                  } else if (k === 'color') {
+                     maskedItem[k] = "bg-stone-100 text-stone-500 border-stone-200";
+                  } else if (k === 'iconColor') {
+                     maskedItem[k] = "bg-stone-300";
+                  } else if (k.toLowerCase().includes('time') || k === 'percentage' || k === 'width' || k === 'level' || k === 'price' || k === 'quantity' || k === 'unitCost' || k === 'total' || k === 'id') {
+                     maskedItem[k] = val; // structural
+                  } else {
+                     maskedItem[k] = "***";
+                  }
+                } else if (typeof val === 'number') {
+                  maskedItem[k] = val; // structural/math
+                } else if (Array.isArray(val)) {
+                  maskedItem[k] = [];
+                } else {
+                  maskedItem[k] = val;
+                }
+              });
+              return maskedItem;
+            }
+            return item;
+          });
+        }
+      });
+    });
+    
+    return clone;
+  }, [courseState, currentUser]);
+
 
 
   // Sync currentUser with DB in case admin changes permissions while user is logged in
@@ -54,6 +142,7 @@ export default function App() {
   const [recipeSearch, setRecipeSearch] = useState("");
   const [moduleSearch, setModuleSearch] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string | null>(null);
+  const [nutritionFilter, setNutritionFilter] = useState<string | null>(null);
   const [selectedMilkType, setSelectedMilkType] = useState<string>("Sữa bắp, sữa bí đỏ (nhóm củ quả bùi)");
   const [activeGroupIdx, setActiveGroupIdx] = useState(0);
   const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
@@ -71,6 +160,8 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+
 
   useEffect(() => {
     if (activeModuleId && !viewedModules.has(activeModuleId)) {
@@ -732,7 +823,7 @@ export default function App() {
         {/* Main Content */}
         <main className="flex-1 px-5 py-8 lg:px-16 lg:py-16 max-w-5xl w-full mx-auto bg-white min-h-screen border-l border-stone-100 shadow-[0_0_40px_rgba(0,0,0,0.02)] print:border-none print:shadow-none print:m-0 print:p-0 print:max-w-none print:w-full">
         {showAdmin ? (
-          <AdminDashboard onClose={() => setShowAdmin(false)} courseData={course} />
+          <AdminDashboard onClose={() => setShowAdmin(false)} courseData={courseState} />
         ) : (
           <>
           {/* Hero Section */}
@@ -1852,8 +1943,34 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="mb-8 relative flex flex-wrap items-center gap-2 pt-3 print:hidden">
+                  <span className="text-sm font-bold text-stone-500 mr-2 flex items-center gap-1.5"><Heart size={16} className="text-rose-400"/> Nhu cầu:</span>
+                  <button
+                    onClick={() => setNutritionFilter(null)}
+                    className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all whitespace-nowrap ${
+                      nutritionFilter === null ? 'bg-stone-800 text-white shadow-sm' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                    }`}
+                  >
+                    Tất cả
+                  </button>
+                  {healthGoals.map(goal => (
+                    <button
+                      key={goal.id}
+                      onClick={() => setNutritionFilter(goal.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all whitespace-nowrap ${
+                        nutritionFilter === goal.id 
+                          ? goal.color + ' shadow-sm ring-1' 
+                          : 'bg-stone-50 text-stone-500 hover:bg-stone-100 border border-stone-200'
+                      }`}
+                    >
+                      {nutritionFilter === goal.id && <span className={`w-1.5 h-1.5 rounded-full ${goal.iconColor} shrink-0`}></span>}
+                      {goal.label}
+                    </button>
+                  ))}
+                </div>
+
               {/* Group Tabs */}
-              {!recipeSearch && !difficultyFilter && (
+              {!recipeSearch && !difficultyFilter && !nutritionFilter && (
                 <div className="flex flex-wrap gap-2 mb-8 print:hidden">
                   {course.modules[6].recipeGroups?.map((group, idx) => (
                     <button
@@ -1872,7 +1989,7 @@ export default function App() {
               )}
 
               {/* Active Group Description */}
-              {!recipeSearch && !difficultyFilter && course.modules[6].recipeGroups && (
+              {!recipeSearch && !difficultyFilter && !nutritionFilter && course.modules[6].recipeGroups && (
                 <div className="mb-6 p-4 bg-teal-50 rounded-xl border border-teal-100 print:hidden flex items-center justify-between gap-4">
                                     <p className="text-teal-800 text-sm font-medium flex-1">
                     {course.modules[6].recipeGroups[activeGroupIdx].groupDesc}
@@ -1890,7 +2007,7 @@ export default function App() {
                   const matchGroup = group.groupName.toLowerCase().includes(searchLower) || group.groupDesc.toLowerCase().includes(searchLower);
                   
                   // If not searching, only show active group
-                  if (!recipeSearch && !difficultyFilter && idx !== activeGroupIdx) {
+                  if (!recipeSearch && !difficultyFilter && !nutritionFilter && idx !== activeGroupIdx) {
                     return [];
                   }
 
@@ -1901,10 +2018,22 @@ export default function App() {
                       recipe.recipe.toLowerCase().includes(searchLower) ||
                       recipe.prepTip.toLowerCase().includes(searchLower);
                     
+                    let isMatch = searchMatch;
+
                     if (difficultyFilter) {
-                      return searchMatch && getDifficulty(recipe.prepTip) === difficultyFilter;
+                      isMatch = isMatch && (getDifficulty(recipe.prepTip) === difficultyFilter);
                     }
-                    return searchMatch;
+
+                    if (nutritionFilter) {
+                      const goal = healthGoals.find(g => g.id === nutritionFilter);
+                      if (goal) {
+                        const targetText = (group.groupName + " " + recipe.name + " " + recipe.usage).toLowerCase();
+                        const hasKeyword = goal.keywords.some(kw => targetText.includes(kw));
+                        isMatch = isMatch && hasKeyword;
+                      }
+                    }
+
+                    return isMatch;
                   });
 
                   return filteredRecipes.map((recipe, rIdx) => {
@@ -1977,7 +2106,7 @@ export default function App() {
                           </div>
                         </div>
                         
-                        {(recipeSearch || difficultyFilter) && (
+                        {(recipeSearch || difficultyFilter || nutritionFilter) && (
                           <div className="mb-4">
                             <span className="inline-block px-2.5 py-1 bg-stone-100 text-stone-600 text-[10px] font-bold uppercase tracking-widest rounded-lg">
                               {group.groupName}
@@ -2047,12 +2176,12 @@ export default function App() {
                                       <span className="text-xs font-bold text-teal-800 uppercase tracking-wider">Khẩu phần (Lít)</span>
                                       <div className="flex items-center gap-1 bg-white rounded-lg border border-teal-200 p-0.5 shadow-sm">
                                         <button 
-                                          onClick={(e) => { e.stopPropagation(); setRecipeMultiplier(prev => Math.max(0.5, prev - 0.5)); }} 
+                                          onClick={(e) => { e.stopPropagation(); setRecipeMultiplier(prev => prev === 0.5 ? 0.3 : (prev <= 0.3 ? 0.3 : prev - 0.5)); }} 
                                           className="download-section w-7 h-7 flex justify-center items-center rounded hover:bg-teal-50 text-teal-700 font-bold"
                                         >-</button>
                                         <span className="w-10 text-center text-sm font-bold text-teal-900">{recipeMultiplier}L</span>
                                         <button 
-                                          onClick={(e) => { e.stopPropagation(); setRecipeMultiplier(prev => prev + 0.5); }} 
+                                          onClick={(e) => { e.stopPropagation(); setRecipeMultiplier(prev => prev === 0.3 ? 0.5 : prev + 0.5); }} 
                                           className="download-section w-7 h-7 flex justify-center items-center rounded hover:bg-teal-50 text-teal-700 font-bold"
                                         >+</button>
                                       </div>
@@ -2060,11 +2189,18 @@ export default function App() {
                                     <p className="text-sm font-bold text-teal-900 leading-relaxed">
                                       {recipe.recipe.replace(/(\d+(?:\.\d+)?)(\s*)(g|ml|lít|trái|quả)/gi, (match, num, space, unit) => {
                                         const val = parseFloat(num) * recipeMultiplier;
-                                        // format to remove trailing .0 if integer
-                                        const displayVal = val % 1 === 0 ? val : val.toFixed(1);
+                                        // làm tròn số nguyên liệu
+                                        const displayVal = Math.round(val);
                                         return `${displayVal}${space}${unit}`;
                                       })}
                                     </p>
+                                    {recipe.yield_info && (
+                                      <div className="mt-2 pt-2 border-t border-teal-100/30">
+                                        <p className="text-sm font-bold text-teal-800">
+                                          Thành phẩm: {(recipe.yield_info || '1 L').replace('1 L', recipeMultiplier + ' L').replace('1 Lít', recipeMultiplier + ' Lít')}
+                                        </p>
+                                      </div>
+                                    )}
                                     <div className="mt-3 pt-3 border-t border-teal-100/50">
                                       <p className="text-xs font-bold text-teal-800 mb-2">Chất tạo ngọt (chọn 1)</p>
                                       <div className="flex gap-2 download-section">
@@ -2156,6 +2292,25 @@ export default function App() {
                                           <p className="text-[9px] uppercase font-bold text-stone-400 mb-0.5">Hạn dùng</p>
                                           <p className="font-bold text-stone-800 text-xs">2 - 3 ngày</p>
                                         </div>
+                                      </div>
+                                    </div>
+                                  </section>
+                                  
+                                  <section>
+                                    <h4 className="font-bold text-sm text-stone-900 mb-3 flex items-center gap-2">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                      Hướng dẫn bảo quản
+                                    </h4>
+                                    <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex gap-4">
+                                      <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                                        <Snowflake size={20} />
+                                      </div>
+                                      <div>
+                                        <p className="font-bold text-stone-800 text-sm mb-1">Bảo quản tủ lạnh</p>
+                                        <p className="text-xs font-medium text-stone-600 leading-relaxed">
+                                          Nhiệt độ tối ưu: <strong>2 - 4°C</strong>.<br />
+                                          Thời gian bảo quản: <strong>2 - 3 ngày</strong>. Nên để sâu trong tủ lạnh, không để ở cánh cửa tủ để tránh sốc nhiệt.
+                                        </p>
                                       </div>
                                     </div>
                                   </section>

@@ -3,110 +3,136 @@ import re
 with open('src/components/AdminDashboard.tsx', 'r') as f:
     content = f.read()
 
-# Change export default function AdminDashboard({ onClose }: { onClose: () => void })
-content = content.replace(
-    'export default function AdminDashboard({ onClose }: { onClose: () => void }) {',
-    'export default function AdminDashboard({ onClose, courseData }: { onClose: () => void, courseData: any }) {'
-)
-
-# Add full_content to activeTab
-content = content.replace(
-    "const [activeTab, setActiveTab] = useState<'users' | 'content'>('users');",
-    "const [activeTab, setActiveTab] = useState<'users' | 'content' | 'full_content'>('users');\n  const [jsonContent, setJsonContent] = useState('');\n  const [jsonError, setJsonError] = useState('');"
-)
-
-# Load JSON on tab change
-use_effect = """
-  useEffect(() => {
-    if (activeTab === 'full_content' && courseData) {
-      const clone = JSON.parse(JSON.stringify(courseData, (key, value) => {
-        if (key === 'icon') return undefined;
-        return value;
-      }));
-      setJsonContent(JSON.stringify(clone, null, 2));
-      setJsonError('');
-    }
-  }, [activeTab, courseData]);
-
-  const handleSaveJson = async () => {
-    try {
-      const parsed = JSON.parse(jsonContent);
-      await setDoc(doc(db, "course_content", "main"), parsed);
-      toast.success("Đã cập nhật toàn bộ nội dung khoá học thành công!");
-      setJsonError('');
-    } catch (e: any) {
-      setJsonError(e.message || "Lỗi cú pháp JSON");
-      toast.error("Vui lòng kiểm tra lại cú pháp JSON!");
-    }
-  };
-"""
+# 1. Add editingLockedPaths state
 content = content.replace(
     "const [editingUnlockedModules, setEditingUnlockedModules] = useState<string[]>([]);",
-    "const [editingUnlockedModules, setEditingUnlockedModules] = useState<string[]>([]);\n" + use_effect
+    "const [editingUnlockedModules, setEditingUnlockedModules] = useState<string[]>([]);\n  const [editingLockedPaths, setEditingLockedPaths] = useState<string[]>([]);"
 )
 
-# Add Tab Button
-old_tab_buttons = """        <button 
-          onClick={() => setActiveTab('content')}
-          className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-            activeTab === 'content' ? 'bg-stone-900 text-white shadow-md' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-          }`}
-        >
-          <FileText size={18} /> Quản lý Nội Dung & Công thức
-        </button>
-      </div>"""
-new_tab_buttons = """        <button 
-          onClick={() => setActiveTab('content')}
-          className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-            activeTab === 'content' ? 'bg-stone-900 text-white shadow-md' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-          }`}
-        >
-          <Plus size={18} /> Thêm Công thức
-        </button>
-        <button 
-          onClick={() => setActiveTab('full_content')}
-          className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
-            activeTab === 'full_content' ? 'bg-amber-500 text-white shadow-md' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-          }`}
-        >
-          <Edit2 size={18} /> Sửa Toàn Bộ Khoá Học
-        </button>
-      </div>"""
-content = content.replace(old_tab_buttons, new_tab_buttons)
+# 2. Update setEditingUser logic
+old_set_user = """                                  setEditingUser(user);
+                                  setEditingUnlockedModules(user.unlockedModules || []);"""
+new_set_user = """                                  setEditingUser(user);
+                                  setEditingUnlockedModules(user.unlockedModules || []);
+                                  setEditingLockedPaths(user.lockedPaths || []);"""
+content = content.replace(old_set_user, new_set_user)
 
-# Add full_content panel
-full_content_panel = """
-      {activeTab === 'full_content' && (
-        <div className="bg-white rounded-[2rem] border border-stone-200 overflow-hidden shadow-sm p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-lg text-stone-900">Chỉnh sửa nội dung khoá học (Dạng JSON)</h3>
-            <button 
-              onClick={handleSaveJson}
-              className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl flex items-center gap-2 transition-colors shadow-sm"
-            >
-              <Save size={18} /> Lưu Thay Đổi
-            </button>
-          </div>
-          {jsonError && <div className="p-4 mb-4 bg-rose-50 text-rose-700 font-medium rounded-xl border border-rose-200">{jsonError}</div>}
-          <div className="bg-stone-900 rounded-xl p-4">
-            <textarea
-              value={jsonContent}
-              onChange={e => {
-                setJsonContent(e.target.value);
-                setJsonError('');
-              }}
-              className="w-full h-[600px] bg-transparent text-emerald-400 font-mono text-sm focus:outline-none resize-none"
-              spellCheck="false"
-            />
-          </div>
-        </div>
-      )}
-"""
+# 3. Update handleSavePermissions
+old_save = """      await setDoc(doc(db, "users", editingUser.id), {
+        ...editingUser,
+        unlockedModules: editingUnlockedModules
+      });"""
+new_save = """      await setDoc(doc(db, "users", editingUser.id), {
+        ...editingUser,
+        unlockedModules: editingUnlockedModules,
+        lockedPaths: editingLockedPaths
+      });"""
+content = content.replace(old_save, new_save)
 
-content = content.replace(
-    "    </div>\n  );\n}",
-    full_content_panel + "\n    </div>\n  );\n}"
-)
+# 4. Modify the modal UI for permissions
+old_modal_inner = """            <div className="space-y-2 mb-6 max-h-96 overflow-y-auto pr-2">
+              {courseData.modules.map(mod => {
+                const isUnlocked = editingUnlockedModules.includes(mod.id);
+                return (
+                  <div key={mod.id} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200">
+                    <div className="flex items-center gap-3">
+                      {isUnlocked ? <Unlock size={18} className="text-emerald-500" /> : <Lock size={18} className="text-stone-400" />}
+                      <span className="text-sm font-semibold text-stone-700 truncate w-48">{mod.title}</span>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        if (isUnlocked) {
+                          setEditingUnlockedModules(prev => prev.filter(id => id !== mod.id));
+                        } else {
+                          setEditingUnlockedModules(prev => [...prev, mod.id]);
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                        isUnlocked ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+                      }`}
+                    >
+                      {isUnlocked ? "Khóa lại" : "Mở khóa"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>"""
+
+new_modal_inner = """            <div className="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-2">
+              {courseData.modules.map(mod => {
+                const isUnlocked = editingUnlockedModules.includes(mod.id);
+                // Lấy các mục có thể khoá của module này
+                const lockableData = extractLockablePaths(courseData).find(m => m.moduleId === mod.id);
+                
+                return (
+                  <div key={mod.id} className="bg-stone-50 rounded-xl border border-stone-200 overflow-hidden">
+                    <div className="flex items-center justify-between p-3 bg-stone-100/50">
+                      <div className="flex items-center gap-3">
+                        {isUnlocked ? <Unlock size={18} className="text-emerald-500" /> : <Lock size={18} className="text-stone-400" />}
+                        <span className="text-sm font-bold text-stone-800 truncate w-48">{mod.title}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if (isUnlocked) {
+                            setEditingUnlockedModules(prev => prev.filter(id => id !== mod.id));
+                          } else {
+                            setEditingUnlockedModules(prev => [...prev, mod.id]);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                          isUnlocked ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+                        }`}
+                      >
+                        {isUnlocked ? "Khóa Toàn Bộ" : "Mở Module"}
+                      </button>
+                    </div>
+                    
+                    {/* Các mục nhỏ bên trong module */}
+                    {isUnlocked && lockableData && lockableData.arrays.length > 0 && (
+                      <div className="p-3 bg-white border-t border-stone-200 space-y-4">
+                        {lockableData.arrays.map(arr => (
+                          <div key={arr.key}>
+                            <h5 className="font-bold text-stone-600 text-[10px] mb-2 uppercase tracking-wider">{arr.key}</h5>
+                            <div className="space-y-1">
+                              {arr.items.map(item => {
+                                const isItemLocked = editingLockedPaths.includes(item.path);
+                                // Cũng kiểm tra xem có bị khoá chung không
+                                const isGlobalLocked = courseData.lockedPaths?.includes(item.path);
+                                
+                                return (
+                                  <div key={item.path} className="flex items-center justify-between p-2 hover:bg-stone-50 rounded-lg transition-colors border border-transparent">
+                                    <span className={`text-xs font-medium truncate pr-2 ${isItemLocked || isGlobalLocked ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
+                                      {item.label}
+                                      {isGlobalLocked && <span className="ml-2 text-[9px] bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded">Khoá chung</span>}
+                                    </span>
+                                    {!isGlobalLocked && (
+                                      <button
+                                        onClick={() => {
+                                          setEditingLockedPaths(prev => 
+                                            isItemLocked ? prev.filter(p => p !== item.path) : [...prev, item.path]
+                                          );
+                                        }}
+                                        className={`p-1.5 rounded-md transition-colors shrink-0 flex items-center justify-center ${isItemLocked ? 'bg-rose-100 text-rose-600 hover:bg-rose-200' : 'bg-stone-100 text-stone-400 hover:bg-stone-200 hover:text-stone-600'}`}
+                                        title={isItemLocked ? "Mở khoá mục này" : "Khoá mục này"}
+                                      >
+                                        {isItemLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>"""
+
+content = content.replace(old_modal_inner, new_modal_inner)
 
 with open('src/components/AdminDashboard.tsx', 'w') as f:
     f.write(content)
+

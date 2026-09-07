@@ -1,0 +1,535 @@
+1 import { toast } from 'react-hot-toast';
+2 import React, { useState, useEffect } from 'react';
+3 import { Users, FileText, X, Plus, Trash2, Edit2, Save, Lock, Unlock, Settings2 } from 'lucide-react';
+4 import { courseData } from '../data';
+5 import { collection, getDocs, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
+6 import { db } from '../lib/firebase';
+7 
+8 
+9 const extractLockablePaths = (course: any) => {
+10   const paths: any[] = [];
+11   course.modules?.forEach((module: any) => {
+12     const modObj = { moduleId: module.id, moduleTitle: module.title, arrays: [] as any[] };
+13     Object.entries(module).forEach(([key, value]) => {
+14       if (Array.isArray(value)) {
+15         const arrObj = { key, items: [] as any[] };
+16         value.forEach((item: any, idx: number) => {
+17           let label = `Mục ${idx + 1}`;
+18           if (typeof item === 'string') label = item.substring(0, 50) + (item.length > 50 ? '...' : '');
+19           else if (item.name) label = item.name;
+20           else if (item.title) label = item.title;
+21           else if (item.group) label = item.group;
+22           else if (item.groupName) label = item.groupName;
+23           else if (item.task) label = item.task;
+24           else if (item.problem) label = item.problem;
+25           
+26           arrObj.items.push({ path: `${module.id}.${key}.${idx}`, label });
+27         });
+28         modObj.arrays.push(arrObj);
+29       }
+30     });
+31     if (modObj.arrays.length > 0) paths.push(modObj);
+32   });
+33   return paths;
+34 };
+35 
+36 export default function AdminDashboard({ onClose, courseData }: { onClose: () => void, courseData: any }) {
+37   const [activeTab, setActiveTab] = useState<'users' | 'content' | 'full_content'>('users');
+38   const [userSubTab, setUserSubTab] = useState<'list' | 'locks'>('list');
+39   const [jsonContent, setJsonContent] = useState('');
+40   const [jsonError, setJsonError] = useState('');
+41   const [users, setUsers] = useState<any[]>([]);
+42   const [recipes, setRecipes] = useState<any[]>([]);
+43   const [loading, setLoading] = useState(true);
+44   
+45   // New User Form
+46   const [newUsername, setNewUsername] = useState('');
+47   const [newPassword, setNewPassword] = useState('');
+48 
+49   // New Recipe Form
+50   const [newRecipeName, setNewRecipeName] = useState('');
+51   const [newRecipeFormula, setNewRecipeFormula] = useState('');
+52   const [newRecipeYield, setNewRecipeYield] = useState('');
+53   const [newRecipeDifficulty, setNewRecipeDifficulty] = useState('Easy');
+54   const [editingUser, setEditingUser] = useState<any>(null);
+55   const [itemToDelete, setItemToDelete] = useState<{id: string, type: "user" | "recipe"} | null>(null);
+56 
+57   const [editingUnlockedModules, setEditingUnlockedModules] = useState<string[]>([]);
+58 
+59   useEffect(() => {
+60     if (activeTab === 'full_content' && courseData) {
+61       const clone = JSON.parse(JSON.stringify(courseData, (key, value) => {
+62         if (key === 'icon') return undefined;
+63         return value;
+64       }));
+65       setJsonContent(JSON.stringify(clone, null, 2));
+66       setJsonError('');
+67     }
+68   }, [activeTab, courseData]);
+69 
+70   
+71   const toggleLock = async (path: string) => {
+72     const currentLocks = courseData.lockedPaths || [];
+73     const newLocks = currentLocks.includes(path) 
+74       ? currentLocks.filter((p: string) => p !== path) 
+75       : [...currentLocks, path];
+76     
+77     const updatedCourse = { ...courseData, lockedPaths: newLocks };
+78     const cloneToSave = JSON.parse(JSON.stringify(updatedCourse, (key, value) => key === 'icon' ? undefined : value));
+79     
+80     try {
+81       await setDoc(doc(db, "course_content", "main"), cloneToSave);
+82       toast.success(newLocks.includes(path) ? 'Đã khoá nội dung' : 'Đã mở khoá nội dung');
+83     } catch (e) {
+84       toast.error('Lỗi khi cập nhật khoá!');
+85     }
+86   };
+87 
+88   const handleSaveJson = async () => {
+89     try {
+90       const parsed = JSON.parse(jsonContent);
+91       await setDoc(doc(db, "course_content", "main"), parsed);
+92       toast.success("Đã cập nhật toàn bộ nội dung khoá học thành công!");
+93       setJsonError('');
+94     } catch (e: any) {
+95       setJsonError(e.message || "Lỗi cú pháp JSON");
+96       toast.error("Vui lòng kiểm tra lại cú pháp JSON!");
+97     }
+98   };
+99 
+100 
+101 
+102   const fetchUsers = async () => {
+103     setLoading(true);
+104     try {
+105       const snapshot = await getDocs(collection(db, "users"));
+106       const userList: any[] = [];
+107       snapshot.forEach((doc) => {
+108         userList.push({ id: doc.id, ...doc.data() });
+109       });
+110       setUsers(userList);
+111     } catch (e) {
+112       console.error(e);
+113     } finally {
+114       setLoading(false);
+115     }
+116   };
+117 
+118   const fetchRecipes = async () => {
+119     setLoading(true);
+120     try {
+121       const snapshot = await getDocs(collection(db, "recipes"));
+122       const recipeList: any[] = [];
+123       snapshot.forEach((doc) => {
+124         recipeList.push({ id: doc.id, ...doc.data() });
+125       });
+126       setRecipes(recipeList);
+127     } catch (e) {
+128       console.error(e);
+129     } finally {
+130       setLoading(false);
+131     }
+132   };
+133 
+134   useEffect(() => {
+135     if (activeTab === 'users') {
+136       fetchUsers();
+137     } else {
+138       fetchRecipes();
+139     }
+140   }, [activeTab]);
+141 
+142   const handleCreateUser = async (e: React.FormEvent) => {
+143     e.preventDefault();
+144     if (!newUsername || !newPassword) return;
+145     try {
+146       await setDoc(doc(db, "users", newUsername), {
+147         username: newUsername,
+148         password: newPassword,
+149         role: "student",
+150         createdAt: new Date().toISOString(),
+151         unlockedModules: []
+152       });
+153       setNewUsername('');
+154       setNewPassword('');
+155       fetchUsers();
+156       toast.success("Tạo tài khoản học viên thành công!");
+157     } catch (e) {
+158       console.error(e);
+159       toast.error("Lỗi khi tạo tài khoản");
+160     }
+161   };
+162 
+163   const handleDeleteUser = async (id: string) => {
+164     try {
+165       await deleteDoc(doc(db, "users", id));
+166       fetchUsers();
+167     } catch (e) {
+168       console.error(e);
+169       toast.error("Lỗi khi xóa");
+170     }
+171   };
+172 
+173   const handleCreateRecipe = async (e: React.FormEvent) => {
+174     e.preventDefault();
+175     if (!newRecipeName || !newRecipeFormula) return;
+176     try {
+177       await addDoc(collection(db, "recipes"), {
+178         name: newRecipeName,
+179         recipe: newRecipeFormula,
+180         usage: newRecipeYield,
+181         difficulty: newRecipeDifficulty,
+182         group: "Công thức tùy chỉnh (Mới)",
+183         createdAt: new Date().toISOString()
+184       });
+185       setNewRecipeName('');
+186       setNewRecipeFormula('');
+187       setNewRecipeYield('');
+188       setNewRecipeDifficulty('Easy');
+189       fetchRecipes();
+190       toast.success("Thêm công thức mới thành công!");
+191     } catch (e) {
+192       console.error(e);
+193       toast.error("Lỗi khi thêm công thức");
+194     }
+195   };
+196   
+197 
+198   const handleSavePermissions = async () => {
+199     if (!editingUser) return;
+200     try {
+201       await setDoc(doc(db, "users", editingUser.id), {
+202         ...editingUser,
+203         unlockedModules: editingUnlockedModules
+204       });
+205       setEditingUser(null);
+206       fetchUsers();
+207       toast.success("Cập nhật quyền thành công!");
+208     } catch (e) {
+209       console.error(e);
+210       toast.error("Lỗi khi cập nhật");
+211     }
+212   };
+213   const handleDeleteRecipe = async (id: string) => {
+214     try {
+215       await deleteDoc(doc(db, "recipes", id));
+216       fetchRecipes();
+217     } catch (e) {
+218       console.error(e);
+219     }
+220   };
+221 return (
+222     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white rounded-3xl p-2 md:p-8 relative">
+223       {itemToDelete && (
+224         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+225           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl border border-stone-200 text-center">
+226             <h3 className="text-xl font-bold text-stone-900 mb-2">Xác nhận xóa</h3>
+227             <p className="text-stone-500 mb-6">Bạn có chắc chắn muốn xóa {itemToDelete.type === 'user' ? 'tài khoản' : 'công thức'} này không? Hành động này không thể hoàn tác.</p>
+228             <div className="flex gap-3">
+229               <button 
+230                 onClick={() => setItemToDelete(null)}
+231                 className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold rounded-xl transition-colors"
+232               >
+233                 Hủy
+234               </button>
+235               <button 
+236                 onClick={() => {
+237                   if (itemToDelete.type === 'user') handleDeleteUser(itemToDelete.id);
+238                   if (itemToDelete.type === 'recipe') handleDeleteRecipe(itemToDelete.id);
+239                   setItemToDelete(null);
+240                 }}
+241                 className="flex-1 py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition-colors"
+242               >
+243                 Xóa ngay
+244               </button>
+245             </div>
+246           </div>
+247         </div>
+248       )}
+249 
+250       {editingUser && (
+251         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 z-[100]">
+252           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-xl border border-stone-200">
+253             <div className="flex justify-between items-center mb-6">
+254               <h3 className="text-xl font-bold text-stone-900">Quyền truy cập</h3>
+255               <button onClick={() => setEditingUser(null)} className="p-2 text-stone-400 hover:text-stone-900 bg-stone-100 rounded-xl">
+256                 <X size={20} />
+257               </button>
+258             </div>
+259             <p className="text-sm font-medium text-stone-500 mb-4">
+260               Học viên: <span className="font-bold text-stone-900">{editingUser.username}</span>
+261             </p>
+262             <div className="space-y-2 mb-6 max-h-96 overflow-y-auto pr-2">
+263               {courseData.modules.map(mod => {
+264                 const isUnlocked = editingUnlockedModules.includes(mod.id);
+265                 return (
+266                   <div key={mod.id} className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200">
+267                     <div className="flex items-center gap-3">
+268                       {isUnlocked ? <Unlock size={18} className="text-emerald-500" /> : <Lock size={18} className="text-stone-400" />}
+269                       <span className="text-sm font-semibold text-stone-700 truncate w-48">{mod.title}</span>
+270                     </div>
+271                     <button 
+272                       onClick={() => {
+273                         if (isUnlocked) {
+274                           setEditingUnlockedModules(prev => prev.filter(id => id !== mod.id));
+275                         } else {
+276                           setEditingUnlockedModules(prev => [...prev, mod.id]);
+277                         }
+278                       }}
+279                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+280                         isUnlocked ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+281                       }`}
+282                     >
+283                       {isUnlocked ? "Khóa lại" : "Mở khóa"}
+284                     </button>
+285                   </div>
+286                 );
+287               })}
+288             </div>
+289             <button onClick={handleSavePermissions} className="w-full py-3 bg-stone-900 text-white rounded-xl font-bold flex items-center justify-center gap-2">
+290               <Save size={18} /> Lưu Thay Đổi
+291             </button>
+292           </div>
+293         </div>
+294       )}
+295 
+296       <div className="flex justify-between items-center mb-8 pb-6 border-b border-stone-200">
+297         <div>
+298           <h2 className="text-3xl font-black text-stone-900 mb-2">Bảng Điều Khiển</h2>
+299           <p className="text-stone-500 font-medium">Quản lý hệ thống khóa học</p>
+300         </div>
+301         <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors">
+302           <X size={24} />
+303         </button>
+304       </div>
+305 
+306       <div className="flex gap-4 mb-8">
+307         <button 
+308           onClick={() => setActiveTab('users')}
+309           className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+310             activeTab === 'users' ? 'bg-stone-900 text-white shadow-md' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+311           }`}
+312         >
+313           <Users size={18} /> Quản lý Học Viên
+314         </button>
+315         <button 
+316           onClick={() => setActiveTab('content')}
+317           className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+318             activeTab === 'content' ? 'bg-stone-900 text-white shadow-md' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+319           }`}
+320         >
+321           <FileText size={18} /> Công Thức
+322         </button>
+323         <button 
+324           onClick={() => setActiveTab('full_content')}
+325           className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
+326             activeTab === 'full_content' ? 'bg-stone-900 text-white shadow-md' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+327           }`}
+328         >
+329           <Edit2 size={18} /> Sửa Toàn Bộ Khoá Học
+330         </button>
+331       </div>
+332 
+333       {activeTab === 'users' && (
+334         <div className="space-y-6">
+335           <div className="flex gap-4 border-b border-stone-200 pb-4">
+336              <button onClick={() => setUserSubTab('list')} className={`px-4 py-2.5 font-bold rounded-xl transition-colors ${userSubTab === 'list' ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-500 hover:bg-stone-100'}`}>Danh sách Học viên</button>
+337              <button onClick={() => setUserSubTab('locks')} className={`px-4 py-2.5 font-bold rounded-xl flex items-center gap-2 transition-colors ${userSubTab === 'locks' ? 'bg-stone-800 text-white shadow-sm' : 'text-stone-500 hover:bg-stone-100'}`}><Lock size={16}/> Khoá Nội Dung Chung</button>
+338           </div>
+339           {userSubTab === 'list' && (
+340             <div className="grid md:grid-cols-3 gap-8">
+341           <div className="md:col-span-1">
+342             <div className="bg-stone-50 p-6 rounded-[2rem] border border-stone-200 sticky top-24">
+343               <h3 className="font-bold text-lg text-stone-900 mb-6">Tạo tài khoản mới</h3>
+344               <form onSubmit={handleCreateUser} className="space-y-4">
+345                 <div>
+346                   <label className="block text-sm font-bold text-stone-700 mb-2">Tên đăng nhập</label>
+347                   <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} className="w-full px-4 py-3 bg-white border border-stone-200 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none" placeholder="VD: hv_nguyenvan" required />
+348                 </div>
+349                 <div>
+350                   <label className="block text-sm font-bold text-stone-700 mb-2">Mật khẩu</label>
+351                   <input type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full px-4 py-3 bg-white border border-stone-200 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none" placeholder="Mật khẩu mặc định" required />
+352                 </div>
+353                 <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
+354                   <Plus size={18} /> Cấp Tài Khoản
+355                 </button>
+356               </form>
+357             </div>
+358           </div>
+359           <div className="md:col-span-2">
+360             <div className="bg-white rounded-[2rem] border border-stone-200 overflow-hidden shadow-sm">
+361               <div className="px-6 py-5 bg-stone-50 border-b border-stone-200">
+362                 <h3 className="font-bold text-lg text-stone-900">Danh sách tài khoản ({users.length})</h3>
+363               </div>
+364               {loading ? (
+365                 <div className="p-10 text-center text-stone-500 font-medium">Đang tải dữ liệu...</div>
+366               ) : (
+367                 <div className="overflow-x-auto">
+368                   <table className="w-full text-left border-collapse">
+369                     <thead>
+370                       <tr className="bg-stone-50/50">
+371                         <th className="py-4 px-6 text-[11px] uppercase tracking-widest font-bold text-stone-500">Tên Đăng Nhập</th>
+372                         <th className="py-4 px-6 text-[11px] uppercase tracking-widest font-bold text-stone-500">Vai Trò</th>
+373                         <th className="py-4 px-6 text-[11px] uppercase tracking-widest font-bold text-stone-500 text-right">Thao tác</th>
+374                       </tr>
+375                     </thead>
+376                     <tbody className="divide-y divide-stone-100">
+377                       {users.map(user => (
+378                         <tr key={user.id} className="hover:bg-stone-50">
+379                           <td className="py-4 px-6 font-bold text-stone-800">{user.username}</td>
+380                           <td className="py-4 px-6">
+381                             <span className={`px-2.5 py-1 text-xs font-bold rounded-md border ${
+382                               user.role === 'admin' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+383                             }`}>
+384                               {user.role}
+385                             </span>
+386                           </td>
+387                           <td className="py-4 px-6 text-right">
+388                             {user.role !== 'admin' && (
+389                               <div className="flex justify-end gap-2">
+390                                 <button type="button" onClick={(e) => {
+391                                   e.preventDefault();
+392                                   e.stopPropagation();
+393                                   setEditingUser(user);
+394                                   setEditingUnlockedModules(user.unlockedModules || []);
+395                                 }} className="p-2 text-stone-400 hover:text-emerald-500 bg-white hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100" title="Cấp quyền">
+396                                   <Settings2 size={16} />
+397                                 </button>
+398                                 <button type="button" onClick={(e) => {
+399                                   e.preventDefault();
+400                                   e.stopPropagation();
+401                                   setItemToDelete({id: user.id, type: "user"});
+402                                 }} className="p-2 text-stone-400 hover:text-rose-500 bg-white hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-100" title="Xóa tài khoản">
+403                                   <Trash2 size={16} />
+404                                 </button>
+405                               </div>
+406                             )}
+407                           </td>
+408                         </tr>
+409                       ))}
+410                     </tbody>
+411                   </table>
+412                 </div>
+413               )}
+414             </div>
+415           </div>
+416         </div>
+417       )}
+418 
+419       {activeTab === 'content' && (
+420         <div className="grid md:grid-cols-3 gap-8">
+421           <div className="md:col-span-1">
+422             <div className="bg-stone-50 p-6 rounded-[2rem] border border-stone-200 sticky top-24">
+423               <h3 className="font-bold text-lg text-stone-900 mb-6">Thêm công thức mới</h3>
+424               <form onSubmit={handleCreateRecipe} className="space-y-4">
+425                 <div>
+426                   <label className="block text-sm font-bold text-stone-700 mb-2">Tên món</label>
+427                   <input type="text" value={newRecipeName} onChange={e => setNewRecipeName(e.target.value)} className="w-full px-4 py-3 bg-white border border-stone-200 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none" placeholder="VD: Sữa Đậu Nành Yến Mạch" required />
+428                 </div>
+429                 <div>
+430                   <label className="block text-sm font-bold text-stone-700 mb-2">Công thức (Gram)</label>
+431                   <textarea value={newRecipeFormula} onChange={e => setNewRecipeFormula(e.target.value)} className="w-full px-4 py-3 bg-white border border-stone-200 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none h-24" placeholder="VD: 50g đậu nành, 30g yến mạch..." required />
+432                 </div>
+433                 <div>
+434                   <label className="block text-sm font-bold text-stone-700 mb-2">Ghi chú / Sản lượng</label>
+435                   <input type="text" value={newRecipeYield} onChange={e => setNewRecipeYield(e.target.value)} className="w-full px-4 py-3 bg-white border border-stone-200 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none" placeholder="VD: Thu được 3 chai 330ml" />
+436                 </div>
+437                 <div>
+438                   <label className="block text-sm font-bold text-stone-700 mb-2">Độ khó</label>
+439                   <select value={newRecipeDifficulty} onChange={e => setNewRecipeDifficulty(e.target.value)} className="w-full px-4 py-3 bg-white border border-stone-200 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+440                     <option value="Easy">Dễ (Easy)</option>
+441                     <option value="Medium">Trung bình (Medium)</option>
+442                     <option value="Hard">Khó (Hard)</option>
+443                   </select>
+444                 </div>
+445                 <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
+446                   <Save size={18} /> Lưu Công Thức
+447                 </button>
+448               </form>
+449             </div>
+450           </div>
+451           
+452           <div className="md:col-span-2">
+453             <div className="bg-white rounded-[2rem] border border-stone-200 overflow-hidden shadow-sm">
+454               <div className="px-6 py-5 bg-stone-50 border-b border-stone-200">
+455                 <h3 className="font-bold text-lg text-stone-900">Danh sách Công thức tùy chỉnh ({recipes.length})</h3>
+456               </div>
+457               {loading ? (
+458                 <div className="p-10 text-center text-stone-500 font-medium">Đang tải dữ liệu...</div>
+459               ) : recipes.length === 0 ? (
+460                 <div className="p-10 text-center text-stone-500 font-medium">Chưa có công thức tùy chỉnh nào được thêm.</div>
+461               ) : (
+462                 <div className="overflow-x-auto">
+463                   <table className="w-full text-left border-collapse">
+464                     <thead>
+465                       <tr className="bg-stone-50/50">
+466                         <th className="py-4 px-6 text-[11px] uppercase tracking-widest font-bold text-stone-500">Tên Món</th>
+467                         <th className="py-4 px-6 text-[11px] uppercase tracking-widest font-bold text-stone-500">Công thức</th>
+468                         <th className="py-4 px-6 text-[11px] uppercase tracking-widest font-bold text-stone-500 text-right">Xóa</th>
+469                       </tr>
+470                     </thead>
+471                     <tbody className="divide-y divide-stone-100">
+472                       {recipes.map(recipe => (
+473                         <tr key={recipe.id} className="hover:bg-stone-50">
+474                           <td className="py-4 px-6 font-bold text-stone-800">
+475                             {recipe.name}
+476                             <div className="mt-1">
+477                               <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${
+478                                 recipe.difficulty === 'Easy' ? 'bg-green-50 text-green-700 border-green-200' :
+479                                 recipe.difficulty === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+480                                 'bg-rose-50 text-rose-700 border-rose-200'
+481                               }`}>
+482                                 {recipe.difficulty}
+483                               </span>
+484                             </div>
+485                           </td>
+486                           <td className="py-4 px-6">
+487                             <p className="text-sm font-medium text-stone-600 line-clamp-2">{recipe.recipe}</p>
+488                           </td>
+489                           <td className="py-4 px-6 text-right">
+490                             <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setItemToDelete({id: recipe.id, type: "recipe"}); }} className="p-2 text-stone-400 hover:text-rose-500 bg-white hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-100">
+491                               <Trash2 size={16} />
+492                             </button>
+493                           </td>
+494                         </tr>
+495                       ))}
+496                     </tbody>
+497                   </table>
+498                 </div>
+499               )}
+500             </div>
+501           </div>
+502         </div>
+503       )}
+504 
+505       
+506 
+507       {activeTab === 'full_content' && (
+508         <div className="bg-white rounded-[2rem] border border-stone-200 overflow-hidden shadow-sm p-6">
+509           <div className="flex justify-between items-center mb-6">
+510             <h3 className="font-bold text-lg text-stone-900">Chỉnh sửa nội dung khoá học (Dạng JSON)</h3>
+511             <button 
+512               onClick={handleSaveJson}
+513               className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl flex items-center gap-2 transition-colors shadow-sm"
+514             >
+515               <Save size={18} /> Lưu Thay Đổi
+516             </button>
+517           </div>
+518           {jsonError && <div className="p-4 mb-4 bg-rose-50 text-rose-700 font-medium rounded-xl border border-rose-200">{jsonError}</div>}
+519           <div className="bg-stone-900 rounded-xl p-4">
+520             <textarea
+521               value={jsonContent}
+522               onChange={e => {
+523                 setJsonContent(e.target.value);
+524                 setJsonError('');
+525               }}
+526               className="w-full h-[600px] bg-transparent text-emerald-400 font-mono text-sm focus:outline-none resize-none"
+527               spellCheck="false"
+528             />
+529           </div>
+530         </div>
+531       )}
+532 
+533     </div>
+534   );
+535 }
